@@ -24,6 +24,6 @@ Vá até a pasta Teste\Front-end\Win32\Debug e execute o arquivo Teste.exe.
 6. Pronto!
 Agora você já pode realizar cadastros de pacientes, farmacêuticos, procedimentos e lançar os serviços farmacêuticos.
 
-![Tela inicial](tela inicial.png)
+![Tela inicial](Tela inicial.png)
 
 
