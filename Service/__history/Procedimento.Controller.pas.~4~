@@ -1,0 +1,119 @@
+unit Procedimento.Controller;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.JSON, FireDAC.Comp.Client,
+  Data.DB, ModelDB, Model.Procedimento, Model.Procedimento.Tipo,
+  Procedimento.Mapper, Procedimento.Svc;
+
+type
+  TProcedimentoController = class
+  private
+    FModelDB: TModelDB;
+    FMapper: TProcedimentoMapper;
+    FSQLHandler: TProcedimentoSQLHandler;
+  public
+    constructor Create(AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    function ObterProcedimentos: TJSONArray;
+    function ObterProcedimentoPorId(const Id: Int64): TJSONObject;
+    function ObterProcedimentoPorTipo(const Tipo: TTipoProcedimento): TJSONArray;
+    function InserirProcedimento(AProcedimento: TProcedimento): Boolean;
+    function AtualizarProcedimento(const Id: Int64; const Tipo: TTipoProcedimento; const Descricao: string; const Valor: Currency): Boolean;
+    function ExcluirProcedimento(const Id: Int64): Boolean;
+    function CarregarProcedimento(const Id: Int64; Procedimento: TProcedimento): Boolean;
+  end;
+
+implementation
+
+{ TProcedimentoController }
+
+constructor TProcedimentoController.Create(AModelDB: TModelDB);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+  FMapper := TProcedimentoMapper.Create;
+  FSQLHandler := TProcedimentoSQLHandler.Create(AModelDB);
+end;
+
+destructor TProcedimentoController.Destroy;
+begin
+  FMapper.Free;
+  FSQLHandler.Free;
+  inherited;
+end;
+
+function TProcedimentoController.ObterProcedimentos: TJSONArray;
+var
+  Lista: TArray<TProcedimento>;
+  Proc: TProcedimento;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FSQLHandler.ListarTodos;
+    for Proc in Lista do
+      Result.AddElement(FMapper.ParaJSON(Proc));
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter procedimentos: ' + E.Message);
+    end;
+  end;
+end;
+
+function TProcedimentoController.ObterProcedimentoPorId(const Id: Int64): TJSONObject;
+var
+  Proc: TProcedimento;
+begin
+  Proc := FSQLHandler.BuscarPorId(Id);
+  if Assigned(Proc) then
+    Result := FMapper.ParaJSON(Proc)
+  else
+    Result := TJSONObject.Create;
+  Proc.Free;
+end;
+
+function TProcedimentoController.ObterProcedimentoPorTipo(const Tipo: TTipoProcedimento): TJSONArray;
+var
+  Lista: TArray<TProcedimento>;
+  Proc: TProcedimento;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FSQLHandler.BuscarPorTipo(Tipo);
+    for Proc in Lista do
+      Result.AddElement(FMapper.ParaJSON(Proc));
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter procedimentos por tipo: ' + E.Message);
+    end;
+  end;
+end;
+
+function TProcedimentoController.InserirProcedimento(AProcedimento: TProcedimento): Boolean;
+begin
+  Result := FSQLHandler.Inserir(AProcedimento);
+end;
+
+function TProcedimentoController.AtualizarProcedimento(const Id: Int64; const Tipo: TTipoProcedimento; const Descricao: string; const Valor: Currency): Boolean;
+begin
+  Result := FSQLHandler.Atualizar(Id, Tipo, Descricao, Valor);
+end;
+
+function TProcedimentoController.ExcluirProcedimento(const Id: Int64): Boolean;
+begin
+  Result := FSQLHandler.Excluir(Id);
+end;
+
+function TProcedimentoController.CarregarProcedimento(const Id: Int64; Procedimento: TProcedimento): Boolean;
+begin
+  Result := FSQLHandler.Carregar(Id, Procedimento);
+end;
+
+end.
+

@@ -1,0 +1,43 @@
+unit Cadastro.Paciente.View;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.Dialogs;
+
+type
+  TFormCadastroPaciente = class(TForm)
+    lblNome: TLabel;
+    edtNome: TEdit;
+    lblCPF: TLabel;
+    edtCPF: TEdit;
+    lblNascimento: TLabel;
+    edtNascimento: TEdit;
+    btnSalvar: TButton;
+    procedure btnSalvarClick(Sender: TObject);
+  private
+    procedure SalvarPaciente;
+  public
+    { Public declarations }
+  end;
+
+var
+  FormCadastroPaciente: TFormCadastroPaciente;
+
+implementation
+
+{$R *.dfm}
+
+procedure TFormCadastroPaciente.btnSalvarClick(Sender: TObject);
+begin
+  SalvarPaciente;
+end;
+
+procedure TFormCadastroPaciente.SalvarPaciente;
+begin
+  // Aqui você pode validar e salvar os dados no banco
+  ShowMessage('Paciente salvo: ' + edtNome.Text);
+end;
+
+end.
+

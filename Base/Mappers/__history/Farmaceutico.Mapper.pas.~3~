@@ -1,0 +1,36 @@
+unit Farmaceutico.Mapper;
+
+interface
+
+uses
+  System.JSON, Model.Pessoa;
+
+type
+  TFarmaceuticoMapper = class
+  public
+    function ParaJSON(const AFarmaceutico: TFarmaceutico): TJSONObject;
+  end;
+
+implementation
+
+uses System.DateUtils, System.SysUtils;
+
+{ TFarmaceuticoMapper }
+
+function TFarmaceuticoMapper.ParaJSON(const AFarmaceutico: TFarmaceutico): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  try
+    Result.AddPair('id', TJSONNumber.Create(AFarmaceutico.Id));
+    Result.AddPair('nome', AFarmaceutico.Nome);
+    Result.AddPair('cpf', AFarmaceutico.CPF);
+    Result.AddPair('dataNascimento', TJSONString.Create(FormatDateTime('yyyy-mm-dd', AFarmaceutico.DataNascimento)));
+    Result.AddPair('crf', AFarmaceutico.CRF);
+    Result.AddPair('especializacao', AFarmaceutico.Especializacao);
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+end.

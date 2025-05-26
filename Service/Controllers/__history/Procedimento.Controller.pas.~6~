@@ -1,0 +1,119 @@
+unit Procedimento.Controller;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.JSON, FireDAC.Comp.Client,
+  Data.DB, ModelDB, Model.Procedimento, Model.Procedimento.Tipo,
+  Procedimento.Mapper, Procedimento.Dao;
+
+type
+  TProcedimentoController = class
+  private
+    FModelDB: TDBModel;
+    FMapper: TProcedimentoMapper;
+    FProcedimentoDAO: TProcedimentoDAO;
+  public
+    constructor Create(AModelDB: TDBModel);
+    destructor Destroy; override;
+
+    function ObterProcedimentos: TJSONArray;
+    function ObterProcedimentoPorId(const Id: Int64): TJSONObject;
+    function ObterProcedimentoPorTipo(const Tipo: TTipoProcedimento): TJSONArray;
+    function InserirProcedimento(AProcedimento: TProcedimento): Boolean;
+    function AtualizarProcedimento(const Id: Int64; AProcedimento: TProcedimento): Boolean;
+    function ExcluirProcedimento(const Id: Int64): Boolean;
+    function CarregarProcedimento(const Id: Int64; Procedimento: TProcedimento): Boolean;
+  end;
+
+implementation
+
+{ TProcedimentoController }
+
+constructor TProcedimentoController.Create(AModelDB: TDBModel);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+  FMapper := TProcedimentoMapper.Create;
+  FProcedimentoDAO := TProcedimentoDAO.Create(AModelDB);
+end;
+
+destructor TProcedimentoController.Destroy;
+begin
+  FMapper.Free;
+  FProcedimentoDAO.Free;
+  inherited;
+end;
+
+function TProcedimentoController.ObterProcedimentos: TJSONArray;
+var
+  Lista: TArray<TProcedimento>;
+  Proc: TProcedimento;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FProcedimentoDAO.ListarTodos;
+    for Proc in Lista do
+      Result.AddElement(FMapper.ParaJSON(Proc));
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter procedimentos: ' + E.Message);
+    end;
+  end;
+end;
+
+function TProcedimentoController.ObterProcedimentoPorId(const Id: Int64): TJSONObject;
+var
+  Proc: TProcedimento;
+begin
+  Proc := FProcedimentoDAO.BuscarPorId(Id);
+  if Assigned(Proc) then
+    Result := FMapper.ParaJSON(Proc)
+  else
+    Result := TJSONObject.Create;
+  Proc.Free;
+end;
+
+function TProcedimentoController.ObterProcedimentoPorTipo(const Tipo: TTipoProcedimento): TJSONArray;
+var
+  Lista: TArray<TProcedimento>;
+  Proc: TProcedimento;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FProcedimentoDAO.BuscarPorTipo(Tipo);
+    for Proc in Lista do
+      Result.AddElement(FMapper.ParaJSON(Proc));
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter procedimentos por tipo: ' + E.Message);
+    end;
+  end;
+end;
+
+function TProcedimentoController.InserirProcedimento(AProcedimento: TProcedimento): Boolean;
+begin
+  Result := FProcedimentoDAO.Inserir(AProcedimento);
+end;
+
+function TProcedimentoController.AtualizarProcedimento(const Id: Int64; AProcedimento: TProcedimento): Boolean;
+begin
+  Result := FProcedimentoDAO.Atualizar(Id, AProcedimento);
+end;
+
+function TProcedimentoController.ExcluirProcedimento(const Id: Int64): Boolean;
+begin
+  Result := FProcedimentoDAO.Excluir(Id);
+end;
+
+function TProcedimentoController.CarregarProcedimento(const Id: Int64; Procedimento: TProcedimento): Boolean;
+begin
+  Result := FProcedimentoDAO.Carregar(Id, Procedimento);
+end;
+
+end.
+

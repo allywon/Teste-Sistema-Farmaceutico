@@ -1,0 +1,283 @@
+unit Routes.Farmaceutico;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, Routes.Interfaces,
+  Farmaceutico.Controller, ModelDB, Model.Pessoa;
+
+type
+  TFarmaceuticoRoute = class(TRouteBase)
+  private
+    FFarmaceuticoController: TFarmaceuticoController;
+
+    procedure RotaFarmaceuticos(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure RotaFarmaceuticoById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+    procedure RotaFarmaceuticoByCPF(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const CPF: string);
+    procedure RotaFarmaceuticoByCRF(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const CRF: string);
+  public
+    constructor Create(AServer: TIdHTTPServer; AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    procedure RegistrarRotas; override;
+    function ProcessarRota(const Path: string; const Verb: THTTPVerb;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean; override;
+  end;
+
+implementation
+
+{ TFarmaceuticoRoute }
+
+constructor TFarmaceuticoRoute.Create(AServer: TIdHTTPServer; AModelDB: TModelDB);
+begin
+  inherited Create(AServer);
+  FFarmaceuticoController := TFarmaceuticoController.Create(AModelDB);
+end;
+
+destructor TFarmaceuticoRoute.Destroy;
+begin
+  FFarmaceuticoController.Free;
+  inherited;
+end;
+
+procedure TFarmaceuticoRoute.RegistrarRotas;
+begin
+  WriteLn('GET    /api/farmaceuticos');
+  WriteLn('GET    /api/farmaceuticos/:id');
+  WriteLn('GET    /api/farmaceuticos/cpf/:cpf');
+  WriteLn('GET    /api/farmaceuticos/crf/:crf');
+  WriteLn('POST   /api/farmaceuticos');
+  WriteLn('PUT    /api/farmaceuticos/:id');
+  WriteLn('DELETE /api/farmaceuticos/:id');
+end;
+
+function TFarmaceuticoRoute.ProcessarRota(const Path: string; const Verb: THTTPVerb;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean;
+var
+  lIdParam: string;
+  lCPFParam: string;
+  lCRFParam: string;
+begin
+  Result := False;
+
+  if Path = '/api/farmaceuticos' then
+  begin
+    if Verb in [hvGET, hvPOST] then
+    begin
+      RotaFarmaceuticos(ARequestInfo, AResponseInfo);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 405;
+      Result := True;
+    end;
+  end
+  else if Path.StartsWith('/api/farmaceuticos/cpf/') then
+  begin
+    lCPFParam := ExtrairParamPath(Path, 4);
+    if lCPFParam <> '' then
+    begin
+      RotaFarmaceuticoByCPF(ARequestInfo, AResponseInfo, lCPFParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "CPF não fornecido"}';
+      Result := True;
+    end;
+  end
+  else if Path.StartsWith('/api/farmaceuticos/crf/') then
+  begin
+    lCRFParam := ExtrairParamPath(Path, 4);
+    if lCRFParam <> '' then
+    begin
+      RotaFarmaceuticoByCRF(ARequestInfo, AResponseInfo, lCRFParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "CRF não fornecido"}';
+      Result := True;
+    end;
+  end
+  else if Path.StartsWith('/api/farmaceuticos/') then
+  begin
+    lIdParam := ExtrairParamPath(Path, 3);
+    if lIdParam <> '' then
+    begin
+      RotaFarmaceuticoById(ARequestInfo, AResponseInfo, lIdParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "ID não fornecido"}';
+      Result := True;
+    end;
+  end;
+end;
+
+procedure TFarmaceuticoRoute.RotaFarmaceuticos(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  lBodyJSON: TJSONObject;
+  lResult: Boolean;
+  lVerbo: THTTPVerb;
+  lFarmaceutico: TFarmaceutico;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FFarmaceuticoController.ObterFarmaceuticos.ToJSON;
+      end;
+
+    hvPOST:
+      begin
+        lBodyJSON := LerBodyComoJSON(ARequestInfo);
+        if not Assigned(lBodyJSON) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"error": "JSON inválido ou ausente"}';
+          Exit;
+        end;
+
+        lFarmaceutico := TFarmaceutico.Create;
+        try
+          lFarmaceutico.Nome := lBodyJSON.GetValue<string>('nome');
+          lFarmaceutico.CPF := lBodyJSON.GetValue<string>('cpf');
+          lFarmaceutico.DataNascimento := lBodyJSON.GetValue<TDateTime>('dataNascimento');
+          lFarmaceutico.CRF := lBodyJSON.GetValue<string>('crf');
+          lFarmaceutico.Especializacao := lBodyJSON.GetValue<string>('especializacao');
+
+          lResult := FFarmaceuticoController.InserirFarmaceutico(lFarmaceutico);
+          if lResult then
+          begin
+            AResponseInfo.ResponseNo := 201;
+            AResponseInfo.ContentText := '{"mensagem": "Farmacêutico criado com sucesso"}';
+          end
+          else
+          begin
+            AResponseInfo.ResponseNo := 500;
+            AResponseInfo.ContentText := '{"erro": "Falha ao inserir farmacêutico"}';
+          end;
+        finally
+          lBodyJSON.Free;
+          lFarmaceutico.Free;
+        end;
+      end;
+  end;
+end;
+
+procedure TFarmaceuticoRoute.RotaFarmaceuticoById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  lId: Int64;
+  lBodyJSON: TJSONObject;
+  lResult: Boolean;
+  lVerbo: THTTPVerb;
+  lFarmaceutico: TFarmaceutico;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+  lId := StrToInt64Def(Id, 0);
+
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FFarmaceuticoController.ObterFarmaceuticoPorId(lId).ToJSON;
+      end;
+
+    hvPUT:
+      begin
+        lBodyJSON := LerBodyComoJSON(ARequestInfo);
+        if not Assigned(lBodyJSON) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"error": "JSON inválido ou ausente"}';
+          Exit;
+        end;
+
+        lFarmaceutico := TFarmaceutico.Create;
+        try
+          lFarmaceutico.Nome := lBodyJSON.GetValue<string>('nome');
+          lFarmaceutico.CPF := lBodyJSON.GetValue<string>('cpf');
+          lFarmaceutico.DataNascimento := lBodyJSON.GetValue<TDateTime>('dataNascimento');
+          lFarmaceutico.CRF := lBodyJSON.GetValue<string>('crf');
+          lFarmaceutico.Especializacao := lBodyJSON.GetValue<string>('especializacao');
+
+          lResult := FFarmaceuticoController.AtualizarFarmaceutico(lId, lFarmaceutico);
+          if lResult then
+          begin
+            AResponseInfo.ResponseNo := 200;
+            AResponseInfo.ContentText := '{"mensagem": "Farmacêutico atualizado com sucesso"}';
+          end
+          else
+          begin
+            AResponseInfo.ResponseNo := 500;
+            AResponseInfo.ContentText := '{"erro": "Falha ao atualizar farmacêutico"}';
+          end;
+        finally
+          lBodyJSON.Free;
+          lFarmaceutico.Free;
+        end;
+      end;
+
+    hvDELETE:
+      begin
+        lResult := FFarmaceuticoController.ExcluirFarmaceutico(lId);
+        if lResult then
+        begin
+          AResponseInfo.ResponseNo := 200;
+          AResponseInfo.ContentText := '{"mensagem": "Farmacêutico excluído com sucesso"}';
+        end
+        else
+        begin
+          AResponseInfo.ResponseNo := 404;
+          AResponseInfo.ContentText := '{"erro": "Farmacêutico não encontrado ou falha ao excluir"}';
+        end;
+      end;
+  end;
+end;
+
+procedure TFarmaceuticoRoute.RotaFarmaceuticoByCPF(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const CPF: string);
+var
+  lVerbo: THTTPVerb;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  if lVerbo = hvGET then
+  begin
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := FFarmaceuticoController.ObterFarmaceuticoPorCPF(CPF).ToJSON;
+  end
+  else
+  begin
+    AResponseInfo.ResponseNo := 405;
+    AResponseInfo.ContentText := '{"erro": "Método não permitido"}';
+  end;
+end;
+
+procedure TFarmaceuticoRoute.RotaFarmaceuticoByCRF(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const CRF: string);
+var
+  lVerbo: THTTPVerb;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  if lVerbo = hvGET then
+  begin
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := FFarmaceuticoController.ObterFarmaceuticoPorCRF(CRF).ToJSON;
+  end
+  else
+  begin
+    AResponseInfo.ResponseNo := 405;
+    AResponseInfo.ContentText := '{"erro": "Método não permitido"}';
+  end;
+end;
+
+end.

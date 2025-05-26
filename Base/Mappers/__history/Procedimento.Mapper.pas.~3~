@@ -1,0 +1,53 @@
+unit Procedimento.Mapper;
+
+interface
+
+uses
+  System.JSON, Model.Procedimento, Model.Procedimento.Tipo;
+
+type
+  TProcedimentoMapper = class
+  public
+    function ParaJSON(const Procedimento: TProcedimento): TJSONObject;
+    function DeJSON(const AJSON: TJSONObject): TProcedimento;
+  end;
+
+implementation
+
+{ TProcedimentoMapper }
+
+function TProcedimentoMapper.ParaJSON(const Procedimento: TProcedimento): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  try
+    Result.AddPair('id', TJSONNumber.Create(Procedimento.Id));
+    Result.AddPair('tipo', TJSONNumber.Create(Ord(Procedimento.Tipo)));
+    Result.AddPair('tipoDescricao', TipoProcedimentoToStr(Procedimento.Tipo));
+    Result.AddPair('descricao', Procedimento.Descricao);
+    Result.AddPair('valor', TJSONNumber.Create(Procedimento.Valor));
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+function TProcedimentoMapper.DeJSON(const AJSON: TJSONObject): TProcedimento;
+begin
+  Result := TProcedimento.Create;
+  try
+    if AJSON.GetValue('id') is TJSONNumber then
+      Result.Id := (AJSON.GetValue('id') as TJSONNumber).AsInt64;
+
+    if AJSON.GetValue('tipo') is TJSONNumber then
+      Result.Tipo := TTipoProcedimento((AJSON.GetValue('tipo') as TJSONNumber).AsInt);
+
+    Result.Descricao := AJSON.GetValue<string>('descricao');
+    Result.Valor := AJSON.GetValue<Currency>('valor');
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+end.
+

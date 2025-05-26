@@ -1,0 +1,265 @@
+unit Routes.ServicoFarmaceutico;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, Routes.Interfaces,
+  ServicoFarmaceutico.Controller, ModelDB, Model.ServicoFarmaceutico,
+  ServicoFarmaceutico.Mapper;
+
+type
+  TServicoFarmaceuticoRoute = class(TRouteBase)
+  private
+    FServicoFarmaceuticoController: TServicoFarmaceuticoController;
+    FMapper: TServicoFarmaceuticoMapper;
+
+    procedure RotaServicos(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure RotaServicoById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const AId: string);
+    procedure RotaServicosPorPeriodo(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+  public
+    constructor Create(AServer: TIdHTTPServer; AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    procedure RegistrarRotas; override;
+    function ProcessarRota(const APath: string; const AVerb: THTTPVerb;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean; override;
+  end;
+
+implementation
+
+{ TServicoFarmaceuticoRoute }
+
+constructor TServicoFarmaceuticoRoute.Create(AServer: TIdHTTPServer; AModelDB: TModelDB);
+begin
+  inherited Create(AServer);
+  FServicoFarmaceuticoController := TServicoFarmaceuticoController.Create(AModelDB);
+  FMapper := TServicoFarmaceuticoMapper.Create;
+end;
+
+destructor TServicoFarmaceuticoRoute.Destroy;
+begin
+  FMapper.Free;
+  FServicoFarmaceuticoController.Free;
+  inherited;
+end;
+
+procedure TServicoFarmaceuticoRoute.RegistrarRotas;
+begin
+  WriteLn('GET    /api/servicos-farmaceuticos');
+  WriteLn('GET    /api/servicos-farmaceuticos/:id');
+  WriteLn('GET    /api/servicos-farmaceuticos/periodo');
+  WriteLn('POST   /api/servicos-farmaceuticos');
+  WriteLn('PUT    /api/servicos-farmaceuticos/:id');
+  WriteLn('DELETE /api/servicos-farmaceuticos/:id');
+end;
+
+function TServicoFarmaceuticoRoute.ProcessarRota(const APath: string; const AVerb: THTTPVerb;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean;
+var
+  lIdParam: string;
+  lPacienteIdParam: string;
+  lFarmaceuticoIdParam: string;
+begin
+  Result := False;
+
+  if APath = '/api/servicos-farmaceuticos' then
+  begin
+    if AVerb in [hvGET, hvPOST] then
+    begin
+      RotaServicos(ARequestInfo, AResponseInfo);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 405;
+      Result := True;
+    end;
+  end
+  else if APath = '/api/servicos-farmaceuticos/periodo' then
+  begin
+    if AVerb = hvGET then
+    begin
+      RotaServicosPorPeriodo(ARequestInfo, AResponseInfo);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 405;
+      AResponseInfo.ContentText := '{"erro": "Método não permitido"}';
+      Result := True;
+    end;
+  end
+  else if APath.StartsWith('/api/servicos-farmaceuticos/') then
+  begin
+    lIdParam := ExtrairParamPath(APath, 3);
+    if lIdParam <> '' then
+    begin
+      RotaServicoById(ARequestInfo, AResponseInfo, lIdParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "ID não fornecido"}';
+      Result := True;
+    end;
+  end;
+end;
+
+procedure TServicoFarmaceuticoRoute.RotaServicos(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  lBodyJSON: TJSONObject;
+  lResult: Boolean;
+  lVerbo: THTTPVerb;
+  lServico: TServicoFarmaceutico;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FServicoFarmaceuticoController.ObterServicos.ToJSON;
+      end;
+
+    hvPOST:
+      begin
+        lBodyJSON := LerBodyComoJSON(ARequestInfo);
+        if not Assigned(lBodyJSON) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"error": "JSON inválido ou ausente"}';
+          Exit;
+        end;
+
+        try
+          lServico := FMapper.DeJSON(lBodyJSON);
+          try
+            lResult := FServicoFarmaceuticoController.InserirServico(lServico);
+            if lResult then
+            begin
+              AResponseInfo.ResponseNo := 201;
+              AResponseInfo.ContentText := '{"mensagem": "Serviço farmacêutico criado com sucesso"}';
+            end
+            else
+            begin
+              AResponseInfo.ResponseNo := 500;
+              AResponseInfo.ContentText := '{"erro": "Falha ao inserir serviço farmacêutico"}';
+            end;
+          finally
+            lServico.Free;
+          end;
+        finally
+          lBodyJSON.Free;
+        end;
+      end;
+  end;
+end;
+
+procedure TServicoFarmaceuticoRoute.RotaServicoById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const AId: string);
+var
+  lId: Int64;
+  lBodyJSON: TJSONObject;
+  lResult: Boolean;
+  lVerbo: THTTPVerb;
+  lServico: TServicoFarmaceutico;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+  lId := StrToInt64Def(AId, 0);
+
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FServicoFarmaceuticoController.ObterServicoPorId(lId).ToJSON;
+      end;
+
+    hvPUT:
+      begin
+        lBodyJSON := LerBodyComoJSON(ARequestInfo);
+        if not Assigned(lBodyJSON) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"error": "JSON inválido ou ausente"}';
+          Exit;
+        end;
+
+        try
+          lServico := FMapper.DeJSON(lBodyJSON, lId);
+          try
+            lResult := FServicoFarmaceuticoController.AtualizarServico(lServico);
+            if lResult then
+            begin
+              AResponseInfo.ResponseNo := 200;
+              AResponseInfo.ContentText := '{"mensagem": "Serviço farmacêutico atualizado com sucesso"}';
+            end
+            else
+            begin
+              AResponseInfo.ResponseNo := 500;
+              AResponseInfo.ContentText := '{"erro": "Falha ao atualizar serviço farmacêutico"}';
+            end;
+          finally
+            lServico.Free;
+          end;
+        finally
+          lBodyJSON.Free;
+        end;
+      end;
+
+    hvDELETE:
+      begin
+        lResult := FServicoFarmaceuticoController.ExcluirServico(lId);
+        if lResult then
+        begin
+          AResponseInfo.ResponseNo := 200;
+          AResponseInfo.ContentText := '{"mensagem": "Serviço farmacêutico excluído com sucesso"}';
+        end
+        else
+        begin
+          AResponseInfo.ResponseNo := 404;
+          AResponseInfo.ContentText := '{"erro": "Serviço farmacêutico não encontrado ou falha ao excluir"}';
+        end;
+      end;
+  end;
+end;
+
+procedure TServicoFarmaceuticoRoute.RotaServicosPorPeriodo(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  lVerbo: THTTPVerb;
+  lDataInicio, lDataFim: TDateTime;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  if lVerbo = hvGET then
+  begin
+    if (ARequestInfo.Params.Values['dataInicio'] <> '') and (ARequestInfo.Params.Values['dataFim'] <> '') then
+    begin
+      try
+        lDataInicio := StrToDateTime(ARequestInfo.Params.Values['dataInicio']);
+        lDataFim := StrToDateTime(ARequestInfo.Params.Values['dataFim']);
+
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FServicoFarmaceuticoController.ObterServicosPorPeriodo(lDataInicio, lDataFim).ToJSON;
+      except
+        on E: Exception do
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"erro": "Formato de data inválido. Use o formato DD/MM/YYYY"}';
+        end;
+      end;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"erro": "Os parâmetros dataInicio e dataFim são obrigatórios"}';
+    end;
+  end
+  else
+  begin
+    AResponseInfo.ResponseNo := 405;
+    AResponseInfo.ContentText := '{"erro": "Método não permitido"}';
+  end;
+end;
+
+end.

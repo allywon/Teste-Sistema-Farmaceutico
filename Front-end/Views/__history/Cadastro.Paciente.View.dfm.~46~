@@ -1,0 +1,5 @@
+inherited fCadastroPaciente: TfCadastroPaciente
+  Caption = 'Cadastro de Pacientes'
+  ExplicitTop = -21
+  TextHeight = 15
+end

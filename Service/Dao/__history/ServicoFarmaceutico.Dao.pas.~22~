@@ -1,0 +1,379 @@
+unit ServicoFarmaceutico.Dao;
+
+interface
+
+uses
+  FireDAC.Comp.Client, ModelDB, Model.ServicoFarmaceutico,
+  System.Generics.Collections, System.SysUtils;
+
+type
+  TServicoFarmaceuticoDAO = class
+  private
+    FDB: TModelDB;
+  public
+    constructor Create(ADB: TModelDB);
+
+    function Inserir(AServico: TServicoFarmaceutico): Boolean;
+    function Atualizar(AServico: TServicoFarmaceutico): Boolean;
+    function Excluir(const AId: Int64): Boolean;
+    function ObterTodos: TObjectList<TServicoFarmaceutico>;
+    function ObterPorId(const AId: Int64): TServicoFarmaceutico;
+  end;
+
+implementation
+
+uses
+  Model.Procedimento, Model.Procedimento.Tipo, Paciente.Dao;
+
+{ TServicoFarmaceuticoDAO }
+
+constructor TServicoFarmaceuticoDAO.Create(ADB: TModelDB);
+begin
+  FDB := ADB;
+end;
+
+function TServicoFarmaceuticoDAO.Inserir(AServico: TServicoFarmaceutico): Boolean;
+var
+  lQuery: TFDQuery;
+  lItemProdecimento: TServicoFarmaceuticoItem;
+begin
+  Result := False;
+  lQuery := TFDQuery.Create(nil);
+  try
+    lQuery.Connection := FDB.FDConnection;
+    FDB.FDConnection.StartTransaction;
+    try
+      lQuery.SQL.Text :=
+        'INSERT INTO servicos_farmaceuticos (data, farmaceutico_id, paciente_id, observacoes, valor_total) ' +
+        'VALUES (:data, :farmaceutico_id, :paciente_id, :observacoes, :valor_total)';
+      lQuery.ParamByName('data').AsDateTime := AServico.Data;
+      lQuery.ParamByName('farmaceutico_id').AsLargeInt := AServico.Farmaceutico.Id;
+      lQuery.ParamByName('paciente_id').AsLargeInt := AServico.Paciente.Id;
+      lQuery.ParamByName('observacoes').AsString := AServico.Observacoes;
+      lQuery.ParamByName('valor_total').AsCurrency := AServico.ValorTotal;
+      lQuery.ExecSQL;
+
+      AServico.Id := lQuery.Connection.GetLastAutoGenValue('id');
+
+      for lItemProdecimento in AServico.ItensProcedimentos do
+      begin
+        lQuery.SQL.Text :=
+          'INSERT INTO servicos_farmaceuticos_itens (servico_id, procedimento_id, valor) ' +
+          'VALUES (:servico_id, :procedimento_id, :valor)';
+        lQuery.ParamByName('servico_id').AsLargeInt := AServico.Id;
+        lQuery.ParamByName('procedimento_id').AsLargeInt := lItemProdecimento.Procedimento.Id;
+        lQuery.ParamByName('valor').AsCurrency := lItemProdecimento.Valor;
+        lQuery.ExecSQL;
+      end;
+
+      FDB.FDConnection.Commit;
+      Result := True;
+    except
+      on E: Exception do
+      begin
+        FDB.FDConnection.Rollback;
+        raise Exception.Create('Erro ao inserir serviço farmacêutico: ' + E.Message);
+      end;
+    end;
+  finally
+    lQuery.Free;
+  end;
+end;
+
+
+function TServicoFarmaceuticoDAO.Atualizar(AServico: TServicoFarmaceutico): Boolean;
+var
+  lQuery: TFDQuery;
+  lItemProcedimento: TServicoFarmaceuticoItem;
+  lIdsAtuais, lIdsNovos: TList<Int64>;
+  lId: Int64;
+const
+  SQL_UPDATE_CABECALHO = 'UPDATE servicos_farmaceuticos SET ' +
+                        'data = :data, ' +
+                        'farmaceutico_id = :farmaceutico_id, ' +
+                        'paciente_id = :paciente_id, ' +
+                        'observacoes = :observacoes, ' +
+                        'valor_total = :valor_total ' +
+                        'WHERE id = :id';
+
+  SQL_SELECT_IDS_EXISTENTES = 'SELECT id FROM servicos_farmaceuticos_itens ' +
+                             'WHERE servico_id = :servico_id ' +
+                             'ORDER BY id';
+
+  SQL_UPDATE_ITEM = 'UPDATE servicos_farmaceuticos_itens SET ' +
+                   'procedimento_id = :procedimento_id, ' +
+                   'valor = :valor ' +
+                   'WHERE id = :id';
+
+  SQL_INSERT_ITEM = 'INSERT INTO servicos_farmaceuticos_itens ' +
+                   '(servico_id, procedimento_id, valor) ' +
+                   'VALUES (:servico_id, :procedimento_id, :valor)';
+
+  SQL_DELETE_ITEM = 'DELETE FROM servicos_farmaceuticos_itens WHERE id = :id';
+begin
+  Result := False;
+
+  if not Assigned(AServico) or (AServico.Id <= 0) then
+    raise EArgumentException.Create('Serviço inválido para atualização');
+
+  lQuery := TFDQuery.Create(nil);
+  lIdsAtuais := TList<Int64>.Create;
+  lIdsNovos := TList<Int64>.Create;
+  try
+    lQuery.Connection := FDB.FDConnection;
+
+    if not FDB.FDConnection.InTransaction then
+      FDB.FDConnection.StartTransaction;
+
+    try
+      lQuery.SQL.Text := SQL_UPDATE_CABECALHO;
+      lQuery.ParamByName('data').AsDateTime := AServico.Data;
+      lQuery.ParamByName('farmaceutico_id').AsLargeInt := AServico.Farmaceutico.Id;
+      lQuery.ParamByName('paciente_id').AsLargeInt := AServico.Paciente.Id;
+      lQuery.ParamByName('observacoes').AsString := AServico.Observacoes;
+      lQuery.ParamByName('valor_total').AsCurrency := AServico.ValorTotal;
+      lQuery.ParamByName('id').AsLargeInt := AServico.Id;
+      lQuery.ExecSQL;
+
+      lQuery.Close;
+      lQuery.SQL.Text := SQL_SELECT_IDS_EXISTENTES;
+      lQuery.ParamByName('servico_id').AsLargeInt := AServico.Id;
+      lQuery.Open;
+
+      try
+        while not lQuery.Eof do
+        begin
+          lIdsAtuais.Add(lQuery.FieldByName('id').AsLargeInt);
+          lQuery.Next;
+        end;
+      finally
+        lQuery.Close;
+      end;
+
+      for lItemProcedimento in AServico.ItensProcedimentos do
+      begin
+        if not Assigned(lItemProcedimento.Procedimento) or
+           (lItemProcedimento.Procedimento.Id <= 0) then
+          raise EArgumentException.Create('Item com procedimento inválido');
+
+        if lItemProcedimento.Id > 0 then
+        begin
+          lIdsNovos.Add(lItemProcedimento.Id);
+
+          lQuery.SQL.Text := SQL_UPDATE_ITEM;
+          lQuery.ParamByName('id').AsLargeInt := lItemProcedimento.Id;
+          lQuery.ParamByName('procedimento_id').AsLargeInt := lItemProcedimento.Procedimento.Id;
+          lQuery.ParamByName('valor').AsCurrency := lItemProcedimento.Valor;
+          lQuery.ExecSQL;
+        end
+        else
+        begin
+          lQuery.SQL.Text := SQL_INSERT_ITEM;
+          lQuery.ParamByName('servico_id').AsLargeInt := AServico.Id;
+          lQuery.ParamByName('procedimento_id').AsLargeInt := lItemProcedimento.Procedimento.Id;
+          lQuery.ParamByName('valor').AsCurrency := lItemProcedimento.Valor;
+          lQuery.ExecSQL;
+
+          lItemProcedimento.Id := lQuery.Connection.GetLastAutoGenValue('servicos_farmaceuticos_itens_seq');
+          lIdsNovos.Add(lItemProcedimento.Id);
+        end;
+      end;
+
+      // Remove itens que não estão mais na lista atual
+      for lId in lIdsAtuais do
+      begin
+        if not lIdsNovos.Contains(lId) then
+        begin
+          lQuery.SQL.Text := SQL_DELETE_ITEM;
+          lQuery.ParamByName('id').AsLargeInt := lId;
+          lQuery.ExecSQL;
+        end;
+      end;
+
+      FDB.FDConnection.Commit;
+      Result := True;
+
+    except
+      on E: Exception do
+      begin
+        if FDB.FDConnection.InTransaction then
+          FDB.FDConnection.Rollback;
+        raise Exception.CreateFmt('Erro ao atualizar serviço farmacêutico [ID: %d]: %s',
+                                [AServico.Id, E.Message]);
+      end;
+    end;
+
+  finally
+    FreeAndNil(lIdsNovos);
+    FreeAndNil(lIdsAtuais);
+    FreeAndNil(lQuery);
+  end;
+end;
+
+function TServicoFarmaceuticoDAO.Excluir(const AId: Int64): Boolean;
+var
+  lQuery: TFDQuery;
+begin
+  Result := False;
+  lQuery := TFDQuery.Create(nil);
+  try
+    lQuery.Connection := FDB.FDConnection;
+    FDB.FDConnection.StartTransaction;
+    try
+      lQuery.SQL.Text := 'DELETE FROM servicos_farmaceuticos_itens WHERE servico_id = :id';
+      lQuery.ParamByName('id').AsLargeInt := AId;
+      lQuery.ExecSQL;
+
+      lQuery.SQL.Text := 'DELETE FROM servicos_farmaceuticos WHERE id = :id';
+      lQuery.ParamByName('id').AsLargeInt := AId;
+      lQuery.ExecSQL;
+
+      FDB.FDConnection.Commit;
+      Result := True;
+    except
+      on E: Exception do
+      begin
+        FDB.FDConnection.Rollback;
+        raise Exception.Create('Erro ao excluir serviço farmacêutico: ' + E.Message);
+      end;
+    end;
+  finally
+    lQuery.Free;
+  end;
+end;
+
+function TServicoFarmaceuticoDAO.ObterPorId(const AId: Int64): TServicoFarmaceutico;
+var
+  lQuery: TFDQuery;
+  lItemProcedimento: TServicoFarmaceuticoItem;
+begin
+  Result := nil;
+  lQuery := TFDQuery.Create(nil);
+  try
+    lQuery.Connection := FDB.FDConnection;
+    lQuery.SQL.Text :=
+      'SELECT sf.id, sf.data, sf.observacoes, sf.valor_total, ' +
+      'f.id AS farmaceutico_id, f.nome AS farmaceutico_nome, ' +
+      'p.id AS paciente_id, p.nome AS paciente_nome ' +
+      'FROM servicos_farmaceuticos sf ' +
+      'JOIN farmaceuticos f ON f.id = sf.farmaceutico_id ' +
+      'JOIN pacientes p ON p.id = sf.paciente_id ' +
+      'WHERE sf.id = :id';
+    lQuery.ParamByName('id').AsLargeInt := AId;
+    lQuery.Open;
+
+    if not lQuery.IsEmpty then
+    begin
+      Result := TServicoFarmaceutico.Create;
+      Result.Id := lQuery.FieldByName('id').AsLargeInt;
+      Result.Data := lQuery.FieldByName('data').AsDateTime;
+      Result.Observacoes := lQuery.FieldByName('observacoes').AsString;
+      Result.ValorTotal := lQuery.FieldByName('valor_total').AsCurrency;
+
+      Result.Farmaceutico.Id := lQuery.FieldByName('farmaceutico_id').AsLargeInt;
+      Result.Farmaceutico.Nome := lQuery.FieldByName('farmaceutico_nome').AsString;
+
+      Result.Paciente.Id := lQuery.FieldByName('paciente_id').AsLargeInt;
+      Result.Paciente.Nome := lQuery.FieldByName('paciente_nome').AsString;
+
+      // Carrega os itens do serviço
+      with TFDQuery.Create(nil) do
+      try
+        Connection := FDB.FDConnection;
+        SQL.Text :=
+          'SELECT si.id, si.procedimento_id, si.valor, pr.descricao, pr.tipo ' +
+          'FROM servicos_farmaceuticos_itens si ' +
+          'JOIN procedimentos pr ON pr.id = si.procedimento_id ' +
+          'WHERE si.servico_id = :servico_id';
+        ParamByName('servico_id').AsLargeInt := AId;
+        Open;
+        while not Eof do
+        begin
+          lItemProcedimento := TServicoFarmaceuticoItem.Create;
+          lItemProcedimento.Id := FieldByName('id').AsLargeInt;
+          lItemProcedimento.Procedimento.Id := FieldByName('procedimento_id').AsLargeInt;
+          lItemProcedimento.Procedimento.Descricao := FieldByName('descricao').AsString;
+          lItemProcedimento.Procedimento.Tipo := TTipoProcedimento(FieldByName('tipo').AsInteger);
+          lItemProcedimento.Valor := FieldByName('valor').AsCurrency;
+          Result.ItensProcedimentos.Add(lItemProcedimento);
+          Next;
+        end;
+      finally
+        Free;
+      end;
+    end;
+  finally
+    lQuery.Free;
+  end;
+end;
+
+
+function TServicoFarmaceuticoDAO.ObterTodos: TObjectList<TServicoFarmaceutico>;
+var
+  lQuery: TFDQuery;
+  lServico: TServicoFarmaceutico;
+  lItemProcedimento: TServicoFarmaceuticoItem;
+begin
+  Result := TObjectList<TServicoFarmaceutico>.Create(True);
+  lQuery := TFDQuery.Create(nil);
+  try
+    lQuery.Connection := FDB.FDConnection;
+    lQuery.SQL.Text :=
+      'SELECT sf.id, sf.data, sf.observacoes, sf.valor_total, ' +
+      'f.id AS farmaceutico_id, f.nome AS farmaceutico_nome, ' +
+      'p.id AS paciente_id, p.nome AS paciente_nome ' +
+      'FROM servicos_farmaceuticos sf ' +
+      'JOIN farmaceuticos f ON f.id = sf.farmaceutico_id ' +
+      'JOIN pacientes p ON p.id = sf.paciente_id';
+    lQuery.Open;
+    while not lQuery.Eof do
+    begin
+      lServico := TServicoFarmaceutico.Create;
+      lServico.Id := lQuery.FieldByName('id').AsLargeInt;
+      lServico.Data := lQuery.FieldByName('data').AsDateTime;
+      lServico.Observacoes := lQuery.FieldByName('observacoes').AsString;
+      lServico.ValorTotal := lQuery.FieldByName('valor_total').AsCurrency;
+
+      lServico.Farmaceutico.Id := lQuery.FieldByName('farmaceutico_id').AsLargeInt;
+      lServico.Farmaceutico.Nome := lQuery.FieldByName('farmaceutico_nome').AsString;
+
+      lServico.Paciente.Id := lQuery.FieldByName('paciente_id').AsLargeInt;
+      lServico.Paciente.Nome := lQuery.FieldByName('paciente_nome').AsString;
+
+      // Carregar itens
+      with TFDQuery.Create(nil) do
+      try
+        Connection := FDB.FDConnection;
+        SQL.Text :=
+          'SELECT si.id, si.procedimento_id, si.valor, pr.descricao ' +
+          ', pr.tipo ' +
+          'FROM servicos_farmaceuticos_itens si ' +
+          'JOIN procedimentos pr ON pr.id = si.procedimento_id ' +
+          'WHERE si.servico_id = :id';
+        ParamByName('id').AsLargeInt := lServico.Id;
+        Open;
+        while not Eof do
+        begin
+          lItemProcedimento := TServicoFarmaceuticoItem.Create;
+          lItemProcedimento.Id := FieldByName('id').AsLargeInt;
+          lItemProcedimento.Procedimento.Id := FieldByName('procedimento_id').AsLargeInt;
+          lItemProcedimento.Procedimento.Descricao := FieldByName('descricao').AsString;
+          lItemProcedimento.Procedimento.Tipo := TTipoProcedimento(FieldByName('tipo').AsInteger);
+          lItemProcedimento.Valor := FieldByName('valor').AsCurrency;
+          lServico.ItensProcedimentos.Add(lItemProcedimento);
+          Next;
+        end;
+      finally
+        Free;
+      end;
+
+      Result.Add(lServico);
+      lQuery.Next;
+    end;
+  finally
+    lQuery.Free;
+  end;
+end;
+
+end.
+

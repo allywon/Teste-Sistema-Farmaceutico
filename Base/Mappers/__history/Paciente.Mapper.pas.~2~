@@ -1,0 +1,36 @@
+unit Paciente.Mapper;
+
+interface
+
+uses
+  System.JSON, Model.Pessoa;
+
+type
+  TPacienteMapper = class
+  public
+    function ParaJSON(const APaciente: TPaciente): TJSONObject;
+  end;
+
+implementation
+
+uses System.DateUtils, System.SysUtils;
+
+{ TProcedimentoMapper }
+
+function TPacienteMapper.ParaJSON(const APaciente: TPaciente): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  try
+    Result.AddPair('id', TJSONNumber.Create(APaciente.Id));
+    Result.AddPair('nome', APaciente.Nome);
+    Result.AddPair('cpf', APaciente.CPF);
+    Result.AddPair('dataNascimento', TJSONString.Create(FormatDateTime('yyyy-mm-dd', APaciente.DataNascimento)));
+
+
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+end.

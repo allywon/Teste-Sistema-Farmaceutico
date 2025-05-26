@@ -1,0 +1,64 @@
+unit Model.Pessoa;
+
+interface
+
+uses
+  System.SysUtils;
+
+type
+  TPessoaBase = class
+  private
+    FId: Int64;
+    FNome: string;
+    FCPF: string;
+    FDataNascimento: TDate;
+    FAviso: String;
+  public
+    property Id: Int64 read FId write FId;
+    property Nome: string read FNome write FNome;
+    property CPF: string read FCPF write FCPF;
+    property DataNascimento: TDate read FDataNascimento write FDataNascimento;
+    property Aviso: String read FAviso write FAviso;
+
+    procedure Limpar; virtual;
+
+  end;
+
+  TPaciente = class(TPessoaBase)
+  private
+  public
+  end;
+
+  TFarmaceutico = class(TPessoaBase)
+  private
+    FCRF: string;
+    FEspecializacao: string;
+  public
+    property CRF: string read FCRF write FCRF;
+    property Especializacao: string read FEspecializacao write FEspecializacao;
+
+    procedure Limpar; override;
+  end;
+
+implementation
+
+
+procedure TPessoaBase.Limpar;
+begin
+  FNome := EmptyStr;
+  FCPF := EmptyStr;
+  FDataNascimento := 0;
+  FAviso := EmptyStr;
+end;
+
+{ TFarmaceutico }
+
+procedure TFarmaceutico.Limpar;
+begin
+   inherited;
+   FCRF := EmptyStr;
+   FEspecializacao := EmptyStr;
+end;
+
+end.
+

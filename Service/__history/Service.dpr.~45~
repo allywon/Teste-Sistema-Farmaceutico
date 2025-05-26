@@ -1,0 +1,131 @@
+program Service;
+{$APPTYPE CONSOLE}
+{$R *.res}
+uses
+  System.SysUtils,
+  Vcl.SvcMgr,
+  ModelDB in 'ModelDB.pas' {DBModel: TDataModule},
+  Server in 'Server.pas',
+  DBCreateTables in 'DBCreateTables.pas',
+  DBInitialData in 'DBInitialData.pas',
+  Model.Pessoa in '..\Base\Models\Model.Pessoa.pas',
+  Model.Procedimento in '..\Base\Models\Model.Procedimento.pas',
+  Model.Procedimento.Tipo in '..\Base\Models\Model.Procedimento.Tipo.pas',
+  Model.ServicoFarmaceutico in '..\Base\Models\Model.ServicoFarmaceutico.pas',
+  Procedimento.Controller in 'Controllers\Procedimento.Controller.pas',
+  Farmaceutico.Controller in 'Controllers\Farmaceutico.Controller.pas',
+  Paciente.Controller in 'Controllers\Paciente.Controller.pas',
+  Procedimento.Mapper in 'Mappers\Procedimento.Mapper.pas',
+  Farmaceutico.Mapper in 'Mappers\Farmaceutico.Mapper.pas',
+  Paciente.Mapper in 'Mappers\Paciente.Mapper.pas',
+  Routes.Interfaces in 'Routes\Routes.Interfaces.pas',
+  Routes.Manager in 'Routes\Routes.Manager.pas',
+  Routes.Status in 'Routes\Routes.Status.pas',
+  Routes.Paciente in 'Routes\Routes.Paciente.pas',
+  Routes.Procedimento in 'Routes\Routes.Procedimento.pas',
+  Procedimento.Dao in 'Dao\Procedimento.Dao.pas',
+  Paciente.Dao in 'Dao\Paciente.Dao.pas',
+  Farmaceutico.Dao in 'Dao\Farmaceutico.Dao.pas',
+  Routes.Farmaceutico in 'Routes\Routes.Farmaceutico.pas',
+  ServicoFarmaceutico.Controller in 'Controllers\ServicoFarmaceutico.Controller.pas',
+  ServicoFarmaceutico.Mapper in 'Mappers\ServicoFarmaceutico.Mapper.pas',
+  ServicoFarmaceutico.Dao in 'Dao\ServicoFarmaceutico.Dao.pas',
+  Routes.ServicoFarmaceutico in 'Routes\Routes.ServicoFarmaceutico.pas';
+
+var
+  Server: TServer;
+  DBSetup: TDBCreateTables;
+  Porta: Integer;
+  Input: string;
+begin
+  try
+    Porta := 8085;
+    WriteLn('--------------------------------------------');
+    WriteLn('API Service - Serviço de API para aplicação desktop');
+    WriteLn('--------------------------------------------');
+    WriteLn('');
+
+    Application.CreateForm(TModelDB, DBModel);
+  if not DBModel.ConectarBanco then
+    begin
+      WriteLn('Erro ao conectar ao banco de dados! Verifique as configurações.');
+      WriteLn('Pressione Enter para encerrar...');
+      ReadLn;
+      Exit;
+    end;
+
+    Server := TServer.Create;
+    try
+      Server.Iniciar(Porta);
+      WriteLn('');
+      WriteLn('Servidor iniciado com sucesso na porta ' + IntToStr(Porta));
+      WriteLn('Digite "exit" para encerrar o serviço.');
+      WriteLn('Digite "help" para ver os comandos disponíveis.');
+      WriteLn('');
+
+      // Loop para manter o console aberto e processar comandos
+      repeat
+        Write('> ');
+        ReadLn(Input);
+
+        // Processa comandos do console
+        if SameText(Input, 'status') then
+        begin
+          WriteLn('Status do servidor: ' + BoolToStr(Server.Server.Active, True));
+          WriteLn('Banco de dados conectado: ' + BoolToStr(DBModel.FDConnection.Connected, True));
+        end
+        else if SameText(Input, 'restart') then
+        begin
+          WriteLn('Reiniciando servidor...');
+          Server.Parar;
+          Server.Iniciar(Porta);
+          WriteLn('Servidor reiniciado com sucesso!');
+        end
+        else if SameText(Input, 'setup-db') then
+        begin
+          WriteLn('Iniciando configuração do banco de dados...');
+
+          DBSetup := TDBCreateTables.Create(DBModel);
+          try
+            if DBSetup.CriarTabelas then
+            begin
+              WriteLn('Estrutura de tabelas criada/atualizada com sucesso!');
+
+              if DBSetup.InserirDadosIniciais then
+                WriteLn('Dados iniciais verificados/inseridos com sucesso!')
+              else
+                WriteLn('Aviso: Houve problemas ao inserir dados iniciais.');
+            end
+            else
+              WriteLn('Aviso: Houve problemas ao criar/atualizar as tabelas.');
+          finally
+            DBSetup.Free;
+          end;
+        end
+        else if SameText(Input, 'help') then
+        begin
+          WriteLn('Comandos disponíveis:');
+          WriteLn('  status   - Exibe o status do servidor');
+          WriteLn('  restart  - Reinicia o servidor');
+          WriteLn('  setup-db - Configura o banco de dados (cria tabelas e dados iniciais)');
+          WriteLn('  exit     - Encerra o serviço');
+          WriteLn('  help     - Exibe esta ajuda');
+        end;
+      until SameText(Input, 'exit');
+
+      WriteLn('Encerrando serviço...');
+    finally
+      Server.Parar;
+      Server.Free;
+
+      DBModel.DesconectarBanco;
+    end;
+  except
+    on E: Exception do
+    begin
+      WriteLn('Erro: ' + E.Message);
+      WriteLn('Pressione Enter para encerrar...');
+      ReadLn;
+    end;
+  end;
+end.

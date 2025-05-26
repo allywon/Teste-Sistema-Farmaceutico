@@ -1,0 +1,243 @@
+unit Routes.Paciente;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, Routes.Interfaces,
+  Paciente.Controller, ModelDB, Model.Pessoa;
+
+type
+  TPacienteRoute = class(TRouteBase)
+  private
+    FPacienteController: TPacienteController;
+
+    procedure RotaPacientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure RotaPacienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+    procedure RotaPacienteByCPF(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const CPF: string);
+  public
+    constructor Create(AServer: TIdHTTPServer; AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    procedure RegistrarRotas; override;
+    function ProcessarRota(const Path: string; const Verb: THTTPVerb;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean; override;
+  end;
+
+implementation
+
+{ TPacienteRoute }
+
+constructor TPacienteRoute.Create(AServer: TIdHTTPServer; AModelDB: TModelDB);
+begin
+  inherited Create(AServer);
+  FPacienteController := TPacienteController.Create(AModelDB);
+end;
+
+destructor TPacienteRoute.Destroy;
+begin
+  FPacienteController.Free;
+  inherited;
+end;
+
+procedure TPacienteRoute.RegistrarRotas;
+begin
+  WriteLn('GET    /api/pacientes');
+  WriteLn('GET    /api/pacientes/:id');
+  WriteLn('GET    /api/pacientes/cpf/:cpf');
+  WriteLn('POST   /api/pacientes');
+  WriteLn('PUT    /api/pacientes/:id');
+  WriteLn('DELETE /api/pacientes/:id');
+end;
+
+function TPacienteRoute.ProcessarRota(const Path: string; const Verb: THTTPVerb;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean;
+var
+  lIdParam: string;
+  lCPFParam: string;
+begin
+  Result := False;
+
+  if Path = '/api/pacientes' then
+  begin
+    if Verb in [hvGET, hvPOST] then
+    begin
+      RotaPacientes(ARequestInfo, AResponseInfo);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 405;
+      Result := True;
+    end;
+  end
+  else if Path.StartsWith('/api/pacientes/cpf/') then
+  begin
+    lCPFParam := ExtrairParamPath(Path, 4);
+    if lCPFParam <> '' then
+    begin
+      RotaPacienteByCPF(ARequestInfo, AResponseInfo, lCPFParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "CPF não fornecido"}';
+      Result := True;
+    end;
+  end
+  else if Path.StartsWith('/api/pacientes/') then
+  begin
+    lIdParam := ExtrairParamPath(Path, 3);
+    if lIdParam <> '' then
+    begin
+      RotaPacienteById(ARequestInfo, AResponseInfo, lIdParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "ID não fornecido"}';
+      Result := True;
+    end;
+  end;
+end;
+
+procedure TPacienteRoute.RotaPacientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  lBodyJSON: TJSONObject;
+  lResult: Boolean;
+  lVerbo: THTTPVerb;
+  lPaciente: TPaciente;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FPacienteController.ObterPacientes.ToJSON;
+      end;
+
+    hvPOST:
+      begin
+        lBodyJSON := LerBodyComoJSON(ARequestInfo);
+        if not Assigned(lBodyJSON) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"error": "JSON inválido ou ausente"}';
+          Exit;
+        end;
+
+        lPaciente := TPaciente.Create;
+        try
+          lPaciente.Nome := lBodyJSON.GetValue<string>('nome');
+          lPaciente.CPF := lBodyJSON.GetValue<string>('cpf');
+          lPaciente.DataNascimento := lBodyJSON.GetValue<TDateTime>('dataNascimento');
+
+          lResult := FPacienteController.InserirPaciente(lPaciente);
+          if lResult then
+          begin
+            AResponseInfo.ResponseNo := 201;
+            AResponseInfo.ContentText := '{"mensagem": "Paciente criado com sucesso"}';
+          end
+          else
+          begin
+            AResponseInfo.ResponseNo := 500;
+            AResponseInfo.ContentText := '{"erro": "Falha ao inserir paciente"}';
+          end;
+        finally
+          lBodyJSON.Free;
+          lPaciente.Free;
+        end;
+      end;
+  end;
+end;
+
+procedure TPacienteRoute.RotaPacienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  lId: Int64;
+  lBodyJSON: TJSONObject;
+  lResult: Boolean;
+  lVerbo: THTTPVerb;
+  lPaciente: TPaciente;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+  lId := StrToInt64Def(Id, 0);
+
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := FPacienteController.ObterPacientePorId(lId).ToJSON;
+      end;
+
+    hvPUT:
+      begin
+        lBodyJSON := LerBodyComoJSON(ARequestInfo);
+        if not Assigned(lBodyJSON) then
+        begin
+          AResponseInfo.ResponseNo := 400;
+          AResponseInfo.ContentText := '{"error": "JSON inválido ou ausente"}';
+          Exit;
+        end;
+
+        lPaciente := TPaciente.Create;
+        try
+          lPaciente.Nome := lBodyJSON.GetValue<string>('nome');
+          lPaciente.CPF := lBodyJSON.GetValue<string>('cpf');
+          lPaciente.DataNascimento := lBodyJSON.GetValue<TDateTime>('dataNascimento');
+
+          lResult := FPacienteController.AtualizarPaciente(lId, lPaciente);
+          if lResult then
+          begin
+            AResponseInfo.ResponseNo := 200;
+            AResponseInfo.ContentText := '{"mensagem": "Paciente atualizado com sucesso"}';
+          end
+          else
+          begin
+            AResponseInfo.ResponseNo := 500;
+            AResponseInfo.ContentText := '{"erro": "Falha ao atualizar paciente"}';
+          end;
+        finally
+          lBodyJSON.Free;
+          lPaciente.Free;
+        end;
+      end;
+
+    hvDELETE:
+      begin
+        lResult := FPacienteController.ExcluirPaciente(lId);
+        if lResult then
+        begin
+          AResponseInfo.ResponseNo := 200;
+          AResponseInfo.ContentText := '{"mensagem": "Paciente excluído com sucesso"}';
+        end
+        else
+        begin
+          AResponseInfo.ResponseNo := 404;
+          AResponseInfo.ContentText := '{"erro": "Paciente não encontrado ou falha ao excluir"}';
+        end;
+      end;
+  end;
+end;
+
+procedure TPacienteRoute.RotaPacienteByCPF(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const CPF: string);
+var
+  lVerbo: THTTPVerb;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  if lVerbo = hvGET then
+  begin
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := FPacienteController.ObterPacientePorCPF(CPF).ToJSON;
+  end
+  else
+  begin
+    AResponseInfo.ResponseNo := 405;
+    AResponseInfo.ContentText := '{"erro": "Método não permitido"}';
+  end;
+end;
+
+end.

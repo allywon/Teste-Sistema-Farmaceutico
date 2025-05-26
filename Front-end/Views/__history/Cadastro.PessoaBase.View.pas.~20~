@@ -1,0 +1,128 @@
+unit Cadastro.PessoaBase.View;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.Dialogs,
+  Vcl.Buttons, Vcl.ExtCtrls, Data.DB, Vcl.WinXPickers, Vcl.Grids, Vcl.DBGrids;
+
+type
+  TfCadastroPessoaBase = class(TForm)
+    lblCodigo: TLabel;
+    edtCodigo: TEdit;
+    lblNome: TLabel;
+    edtNome: TEdit;
+    lblCPF: TLabel;
+    edtCPF: TEdit;
+    lblNascimento: TLabel;
+    edtDtNascimento: TDatePicker;
+    pnlCentro: TPanel;
+    pnlDados: TPanel;
+    pnlGrid: TPanel;
+    dbgPessoas: TDBGrid;
+    pnlPesquisa: TPanel;
+    edtPesquisa: TEdit;
+    lblPesquisa: TLabel;
+    pnlBotoes: TPanel;
+    btnNovo: TBitBtn;
+    btnEditar: TBitBtn;
+    btnSalvar: TBitBtn;
+    btnExcluir: TBitBtn;
+    btnCancelar: TBitBtn;
+    dsPessoas: TDataSource;
+    procedure btnNovoClick(Sender: TObject); virtual;
+    procedure btnEditarClick(Sender: TObject); virtual;
+    procedure btnSalvarClick(Sender: TObject); virtual;
+    procedure btnCancelarClick(Sender: TObject); virtual;
+    procedure dbgPessoasDblClick(Sender: TObject); virtual;
+    procedure edtPesquisaChange(Sender: TObject); virtual;
+    procedure FormShow(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+  protected
+    FModoEdicao: Boolean;
+    procedure PreencherCampos; virtual; abstract;
+    procedure LimparCampos; virtual; abstract;
+    procedure SalvarRegistro; virtual; abstract;
+    procedure PesquisarRegistros; virtual; abstract;
+    procedure FiltrarRegistros(const ATexto: string); virtual; abstract;
+    procedure ConfigurarModoEdicao(AEditando: Boolean); virtual;
+  public
+    { Public declarations }
+  end;
+
+var
+  fCadastroPessoaBase: TfCadastroPessoaBase;
+
+implementation
+
+{$R *.dfm}
+
+procedure TfCadastroPessoaBase.btnNovoClick(Sender: TObject);
+begin
+  LimparCampos;
+  ConfigurarModoEdicao(True);
+end;
+
+procedure TfCadastroPessoaBase.btnEditarClick(Sender: TObject);
+begin
+  PreencherCampos;
+  ConfigurarModoEdicao(True);
+end;
+
+procedure TfCadastroPessoaBase.btnExcluirClick(Sender: TObject);
+begin
+   //
+end;
+
+procedure TfCadastroPessoaBase.btnSalvarClick(Sender: TObject);
+begin
+  SalvarRegistro;
+end;
+
+procedure TfCadastroPessoaBase.btnCancelarClick(Sender: TObject);
+begin
+  ConfigurarModoEdicao(False);
+end;
+
+procedure TfCadastroPessoaBase.dbgPessoasDblClick(Sender: TObject);
+begin
+  btnEditarClick(Sender);
+end;
+
+procedure TfCadastroPessoaBase.edtPesquisaChange(Sender: TObject);
+begin
+  FiltrarRegistros(Trim(edtPesquisa.Text));
+end;
+
+procedure TfCadastroPessoaBase.FormCreate(Sender: TObject);
+begin
+   //
+end;
+
+procedure TfCadastroPessoaBase.FormShow(Sender: TObject);
+begin
+  ConfigurarModoEdicao(False);
+end;
+
+procedure TfCadastroPessoaBase.ConfigurarModoEdicao(AEditando: Boolean);
+begin
+  FModoEdicao := AEditando;
+
+  btnNovo.Enabled := not Editando;
+  btnSalvar.Enabled := Editando;
+  btnCancelar.Enabled := Editando;
+  edtPesquisa.Enabled := not Editando;
+  dbgPessoas.Enabled := not Editando;
+  edtNome.Enabled := Editando;
+  edtCPF.Enabled := Editando;
+  edtDtNascimento.Enabled := Editando;
+
+  edtCodigo.ReadOnly := True;
+
+  if not Editando then
+    LimparCampos;
+end;
+
+end.
+

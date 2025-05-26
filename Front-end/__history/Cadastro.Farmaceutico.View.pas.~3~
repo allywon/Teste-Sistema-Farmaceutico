@@ -1,0 +1,43 @@
+unit Cadastro.Farmaceutico.View;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls;
+
+type
+  TFormCadastroFarmaceutico = class(TForm)
+    lblNome: TLabel;
+    edtNome: TEdit;
+    lblCRF: TLabel;
+    edtCRF: TEdit;
+    lblEspecializacao: TLabel;
+    edtEspecializacao: TEdit;
+    btnSalvar: TButton;
+    procedure btnSalvarClick(Sender: TObject);
+  private
+    procedure SalvarFarmaceutico;
+  public
+    { Public declarations }
+  end;
+
+var
+  FormCadastroFarmaceutico: TFormCadastroFarmaceutico;
+
+implementation
+
+{$R *.dfm}
+
+procedure TFormCadastroFarmaceutico.btnSalvarClick(Sender: TObject);
+begin
+  SalvarFarmaceutico;
+end;
+
+procedure TFormCadastroFarmaceutico.SalvarFarmaceutico;
+begin
+  // Aqui você pode validar e salvar os dados no banco
+  ShowMessage('Farmacêutico salvo: ' + edtNome.Text);
+end;
+
+end.
+

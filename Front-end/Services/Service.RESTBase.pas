@@ -1,0 +1,85 @@
+unit Service.RESTBase;
+
+interface
+
+uses
+  REST.Client, REST.Types, REST.Response.Adapter, System.SysUtils;
+
+type
+  TRESTServiceBase = class
+  protected
+    FRESTClient: TRESTClient;
+    FRESTRequest: TRESTRequest;
+    FRESTResponse: TRESTResponse;
+    procedure ConfigurarREST;
+    procedure LimparRequest;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    function ExecutarRequisicao(const Metodo: TRESTRequestMethod; const Recurso: string;
+      const Body: string = ''): string;
+  end;
+
+implementation
+
+procedure TRESTServiceBase.ConfigurarREST;
+begin
+  FRESTClient.BaseURL := 'http://localhost:8085/api';
+  FRESTClient.Accept := 'application/json';
+  FRESTClient.ContentType := 'application/json';
+end;
+
+procedure TRESTServiceBase.LimparRequest;
+begin
+  FRESTRequest.Params.Clear;
+  FRESTRequest.Body.ClearBody;
+
+  FRESTRequest.Response := nil;
+  FRESTResponse.Free;
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest.Response := FRESTResponse;
+end;
+
+function TRESTServiceBase.ExecutarRequisicao(const Metodo: TRESTRequestMethod;
+  const Recurso: string; const Body: string = ''): string;
+begin
+  LimparRequest;
+
+  FRESTRequest.Method := Metodo;
+  FRESTRequest.Resource := Recurso;
+
+  if Body <> EmptyStr then
+    FRESTRequest.Body.Add(Body, ContentTypeFromString('application/json'));
+
+  try
+    FRESTRequest.Execute;
+    Result := FRESTResponse.Content;
+  except
+    on E: Exception do
+    begin
+      Result := '{"error":"' + E.Message + '"}';
+      raise;
+    end;
+  end;
+end;
+
+constructor TRESTServiceBase.Create;
+begin
+  FRESTClient := TRESTClient.Create(nil);
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest := TRESTRequest.Create(nil);
+  FRESTRequest.Client := FRESTClient;
+  FRESTRequest.Response := FRESTResponse;
+  ConfigurarREST;
+end;
+
+destructor TRESTServiceBase.Destroy;
+begin
+  FRESTRequest.Free;
+  FRESTResponse.Free;
+  FRESTClient.Free;
+  inherited;
+end;
+
+end.

@@ -1,0 +1,141 @@
+unit Routes.Paciente;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, Routes.Interfaces, ModelDB;
+
+type
+  TPacienteRoute = class(TRouteBase)
+  private
+    // Aqui você adicionaria o controller do paciente quando for criado
+    // FPacienteController: TPacienteController;
+
+    procedure RotaPacientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure RotaPacienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+  public
+    constructor Create(AServer: TIdHTTPServer; AModelDB: TDBModel);
+    destructor Destroy; override;
+
+    procedure RegistrarRotas; override;
+    function ProcessarRota(const Path: string; const Verb: THTTPVerb;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean; override;
+  end;
+
+implementation
+
+{ TPacienteRoute }
+
+constructor TPacienteRoute.Create(AServer: TIdHTTPServer; AModelDB: TDBModel);
+begin
+  inherited Create(AServer);
+  // Inicializará o controller do paciente quando for criado
+  // FPacienteController := TPacienteController.Create(AModelDB);
+end;
+
+destructor TPacienteRoute.Destroy;
+begin
+  // FPacienteController.Free;
+  inherited;
+end;
+
+procedure TPacienteRoute.RegistrarRotas;
+begin
+  WriteLn('GET    /api/pacientes');
+  WriteLn('GET    /api/pacientes/:id');
+  WriteLn('POST   /api/pacientes');
+  WriteLn('PUT    /api/pacientes/:id');
+  WriteLn('DELETE /api/pacientes/:id');
+end;
+
+function TPacienteRoute.ProcessarRota(const Path: string; const Verb: THTTPVerb;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean;
+var
+  lIdParam: string;
+begin
+  Result := False;
+
+  if Path = '/api/pacientes' then
+  begin
+    if Verb in [hvGET, hvPOST] then
+    begin
+      RotaPacientes(ARequestInfo, AResponseInfo);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 405;
+      Result := True;
+    end;
+  end
+  else if Path.StartsWith('/api/pacientes/') then
+  begin
+    lIdParam := ExtrairParamPath(Path, 3);
+    if lIdParam <> '' then
+    begin
+      RotaPacienteById(ARequestInfo, AResponseInfo, lIdParam);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "ID não fornecido"}';
+      Result := True;
+    end;
+  end;
+end;
+
+procedure TPacienteRoute.RotaPacientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  lVerbo: THTTPVerb;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  // Implementação temporária até ter o modelo de Paciente completo
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := '{"message": "Lista de pacientes - implementação pendente"}';
+      end;
+
+    hvPOST:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := '{"message": "Criar paciente - implementação pendente"}';
+      end;
+  end;
+end;
+
+procedure TPacienteRoute.RotaPacienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  lId: Int64;
+  lVerbo: THTTPVerb;
+begin
+  lVerbo := ObterVerboHTTP(ARequestInfo.Command);
+  lId := StrToInt64Def(Id, 0);
+
+  // Implementação temporária até ter o modelo de Paciente completo
+  case lVerbo of
+    hvGET:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := Format('{"message": "Buscar paciente ID %d - implementação pendente"}', [lId]);
+      end;
+
+    hvPUT:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := Format('{"message": "Atualizar paciente ID %d - implementação pendente"}', [lId]);
+      end;
+
+    hvDELETE:
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := Format('{"message": "Excluir paciente ID %d - implementação pendente"}', [lId]);
+      end;
+  end;
+end;
+
+end.

@@ -1,0 +1,99 @@
+unit Procedimento.Controller;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.JSON, FireDAC.Comp.Client,
+  Data.DB, ModelDB, Model.Procedimento, Model.Procedimento.Tipo,
+  Procedimento.Mapper, Procedimento.Dao;
+
+type
+  TProcedimentoController = class
+  private
+    FModelDB: TModelDB;
+    FMapper: TProcedimentoMapper;
+    FProcedimentoDAO: TProcedimentoDAO;
+  public
+    constructor Create(AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    function ObterProcedimentos: TJSONArray;
+    function ObterProcedimentoPorId(const AId: Int64): TJSONObject;
+    function InserirProcedimento(AProcedimento: TProcedimento): Boolean;
+    function AtualizarProcedimento(const AId: Int64; AProcedimento: TProcedimento): Boolean;
+    function ExcluirProcedimento(const AId: Int64): Boolean;
+    function CarregarProcedimento(const AId: Int64; AProcedimento: TProcedimento): Boolean;
+  end;
+
+implementation
+
+{ TProcedimentoController }
+
+constructor TProcedimentoController.Create(AModelDB: TModelDB);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+  FMapper := TProcedimentoMapper.Create;
+  FProcedimentoDAO := TProcedimentoDAO.Create(AModelDB);
+end;
+
+destructor TProcedimentoController.Destroy;
+begin
+  FreeAndNil(FMapper);
+  FreeAndNil(FProcedimentoDAO);
+  inherited;
+end;
+
+function TProcedimentoController.ObterProcedimentos: TJSONArray;
+var
+  Lista: TArray<TProcedimento>;
+  Proc: TProcedimento;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FProcedimentoDAO.ListarTodos;
+    for Proc in Lista do
+      Result.AddElement(FMapper.ParaJSON(Proc));
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter procedimentos: ' + E.Message);
+    end;
+  end;
+end;
+
+function TProcedimentoController.ObterProcedimentoPorId(const AId: Int64): TJSONObject;
+var
+  Proc: TProcedimento;
+begin
+  Proc := FProcedimentoDAO.BuscarPorId(AId);
+  if Assigned(Proc) then
+    Result := FMapper.ParaJSON(Proc)
+  else
+    Result := TJSONObject.Create;
+  Proc.Free;
+end;
+
+function TProcedimentoController.InserirProcedimento(AProcedimento: TProcedimento): Boolean;
+begin
+  Result := FProcedimentoDAO.Inserir(AProcedimento);
+end;
+
+function TProcedimentoController.AtualizarProcedimento(const AId: Int64; AProcedimento: TProcedimento): Boolean;
+begin
+  Result := FProcedimentoDAO.Atualizar(AId, AProcedimento);
+end;
+
+function TProcedimentoController.ExcluirProcedimento(const AId: Int64): Boolean;
+begin
+  Result := FProcedimentoDAO.Excluir(AId);
+end;
+
+function TProcedimentoController.CarregarProcedimento(const AId: Int64; AProcedimento: TProcedimento): Boolean;
+begin
+  Result := FProcedimentoDAO.Carregar(AId, AProcedimento);
+end;
+
+end.
+

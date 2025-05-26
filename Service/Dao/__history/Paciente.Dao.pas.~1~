@@ -1,0 +1,7 @@
+unit Paciente.Dao;
+
+interface
+
+implementation
+
+end.

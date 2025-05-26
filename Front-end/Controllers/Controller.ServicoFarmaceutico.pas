@@ -1,0 +1,224 @@
+unit Controller.ServicoFarmaceutico;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.JSON, REST.Types,
+  System.Generics.Collections, Service.RESTBase, Model.Pessoa,
+  Model.ServicoFarmaceutico, Model.Procedimento, Model.Procedimento.Tipo;
+
+type
+  TServicoFarmaceuticoController = class(TRESTServiceBase)
+  public
+    function BuscarTodos: TObjectList<TServicoFarmaceutico>;
+    function BuscarPorId(const AId: Int64): TServicoFarmaceutico;
+    function BuscarPorPeriodo(const ADataInicio, ADataFim: TDateTime): TObjectList<TServicoFarmaceutico>;
+    function Salvar(const AServicoFarmaceutico: TServicoFarmaceutico): Boolean;
+    function Excluir(const AId: Int64): Boolean;
+  end;
+
+implementation
+
+uses
+  System.StrUtils, System.DateUtils, ServicoFarmaceutico.Mapper, Controller.Pessoa,
+  Controller.Procedimento;
+
+{ TServicoFarmaceuticoController }
+
+function TServicoFarmaceuticoController.BuscarTodos: TObjectList<TServicoFarmaceutico>;
+var
+  lJSONArray: TJSONArray;
+  lJSONItem: TJSONValue;
+  lJSONObject: TJSONObject;
+  lServicoFarmaceutico: TServicoFarmaceutico;
+  lPessoa: TPessoaController;
+  lResponseContent: string;
+begin
+  Result := TObjectList<TServicoFarmaceutico>.Create(True);
+
+  try
+    lResponseContent := ExecutarRequisicao(rmGET, 'servicos-farmaceuticos', EmptyStr);
+
+    if FRESTResponse.StatusCode = 200 then
+    begin
+      lJSONArray := TJSONObject.ParseJSONValue(FRESTResponse.Content) as TJSONArray;
+      if not Assigned(lJSONArray) then
+        Exit;
+
+      try
+        for lJSONItem in lJSONArray do
+        begin
+          if lJSONItem is TJSONObject then
+          begin
+            lJSONObject := lJSONItem as TJSONObject;
+
+            lServicoFarmaceutico := TServicoFarmaceuticoMapper.Create.DeJSON(lJSONObject);
+            lPessoa := TPessoaController.Create;
+            try
+              lServicoFarmaceutico.Paciente := TPaciente(lPessoa.BuscarPorId(TPessoaTipo.ptPaciente, lServicoFarmaceutico.Paciente.Id));
+              lServicoFarmaceutico.Farmaceutico := TFarmaceutico(lPessoa.BuscarPorId(TPessoaTipo.ptFarmaceutico, lServicoFarmaceutico.Farmaceutico.Id));
+            finally
+              lPessoa.Free;
+            end;
+
+            if Assigned(lServicoFarmaceutico) then
+              Result.Add(lServicoFarmaceutico);
+          end;
+        end;
+      finally
+        lJSONArray.Free;
+      end;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.Clear;
+      raise Exception.Create('Erro ao buscar serviços farmacêuticos: ' + E.Message);
+    end;
+  end;
+end;
+
+function TServicoFarmaceuticoController.BuscarPorId(const AId: Int64): TServicoFarmaceutico;
+var
+  lJSON: TJSONObject;
+  lResponseContent: string;
+  lPessoaController: TPessoaController;
+  lProcedimentoController: TProcedimentoController;
+  lServicoFarmaceuticoItem: TServicoFarmaceuticoItem;
+begin
+  Result := nil;
+
+  try
+    lResponseContent := ExecutarRequisicao(rmGET, Format('servicos-farmaceuticos/%d', [AId]), EmptyStr);
+
+    if FRESTResponse.StatusCode = 200 then
+    begin
+      lJSON := TJSONObject.ParseJSONValue(FRESTResponse.Content) as TJSONObject;
+      if not Assigned(lJSON) then
+        Exit;
+
+      try
+        Result := TServicoFarmaceuticoMapper.Create.DeJSON(lJSON);
+
+        lPessoaController := TPessoaController.Create;
+        try
+          Result.Paciente := TPaciente(lPessoaController.BuscarPorId(TPessoaTipo.ptPaciente, Result.Paciente.Id));
+          Result.Farmaceutico := TFarmaceutico(lPessoaController.BuscarPorId(TPessoaTipo.ptFarmaceutico, Result.Farmaceutico.Id));
+        finally
+          lPessoaController.Free;
+        end;
+
+        lProcedimentoController := TProcedimentoController.Create;
+        try
+          for lServicoFarmaceuticoItem in Result.ItensProcedimentos do
+            lServicoFarmaceuticoItem.Procedimento := lProcedimentoController.BuscarPorId(lServicoFarmaceuticoItem.Procedimento.Id);
+        finally
+          lProcedimentoController.Free;
+        end;
+      finally
+        lJSON.Free;
+      end;
+    end;
+  except
+    on E: Exception do
+      raise Exception.Create('Erro ao buscar serviço farmacêutico por ID: ' + E.Message);
+  end;
+end;
+
+function TServicoFarmaceuticoController.BuscarPorPeriodo(const ADataInicio, ADataFim: TDateTime): TObjectList<TServicoFarmaceutico>;
+var
+  JSONArray: TJSONArray;
+  JSONItem: TJSONValue;
+  JSONObject: TJSONObject;
+  lServicoFarmaceutico: TServicoFarmaceutico;
+  lPessoa: TPessoaController;
+  lResponseContent: string;
+begin
+  Result := TObjectList<TServicoFarmaceutico>.Create(True);
+
+  try
+    lResponseContent := ExecutarRequisicao(
+      rmGET,
+      Format('servicos-farmaceuticos/periodo?dataInicio=%s&dataFim=%s',
+        [FormatDateTime('DD/MM/YYYY', ADataInicio), FormatDateTime('DD/MM/YYYY', ADataFim)]),
+      EmptyStr
+    );
+
+    if FRESTResponse.StatusCode = 200 then
+    begin
+      JSONArray := TJSONObject.ParseJSONValue(FRESTResponse.Content) as TJSONArray;
+      if not Assigned(JSONArray) then
+        Exit;
+
+      try
+        for JSONItem in JSONArray do
+        begin
+          JSONObject := JSONItem as TJSONObject;
+          lServicoFarmaceutico := TServicoFarmaceuticoMapper.Create.DeJSON(JSONObject);
+
+          lPessoa := TPessoaController.Create;
+          try
+            lServicoFarmaceutico.Paciente := TPaciente(lPessoa.BuscarPorId(TPessoaTipo.ptPaciente, lServicoFarmaceutico.Paciente.Id));
+            lServicoFarmaceutico.Farmaceutico := TFarmaceutico(lPessoa.BuscarPorId(TPessoaTipo.ptFarmaceutico, lServicoFarmaceutico.Farmaceutico.Id));
+          finally
+            lPessoa.Free;
+          end;
+
+          Result.Add(lServicoFarmaceutico);
+        end;
+      finally
+        JSONArray.Free;
+      end;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.Clear;
+      raise Exception.Create('Erro ao buscar serviços farmacêuticos por período: ' + E.Message);
+    end;
+  end;
+end;
+
+function TServicoFarmaceuticoController.Salvar(const AServicoFarmaceutico: TServicoFarmaceutico): Boolean;
+var
+  lJSON: TJSONObject;
+  lResponseContent, lResource: string;
+  lMetodo: TRESTRequestMethod;
+begin
+  lJSON := TServicoFarmaceuticoMapper.Create.ParaJSON(AServicoFarmaceutico);
+  try
+    if AServicoFarmaceutico.Id = 0 then
+    begin
+      lMetodo := rmPOST;
+      lResource := 'servicos-farmaceuticos';
+    end
+    else
+    begin
+      lMetodo := rmPUT;
+      lResource := Format('servicos-farmaceuticos/%d', [AServicoFarmaceutico.Id]);
+    end;
+
+    try
+      lResponseContent := ExecutarRequisicao(lMetodo, lResource, lJSON.ToJSON);
+      Result := FRESTResponse.StatusCode in [200, 201];
+    except
+      on E: Exception do
+      begin
+        AServicoFarmaceutico.Aviso := FRESTResponse.Content;
+        Result := False;
+      end;
+    end;
+  finally
+    lJSON.Free;
+  end;
+end;
+
+function TServicoFarmaceuticoController.Excluir(const AId: Int64): Boolean;
+var
+  ResponseContent: string;
+begin
+  ResponseContent := ExecutarRequisicao(rmDELETE, Format('servicos-farmaceuticos/%d', [AId]), EmptyStr);
+  Result := FRESTResponse.StatusCode = 200;
+end;
+
+end.

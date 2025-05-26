@@ -1,0 +1,222 @@
+unit ServerEndpoints;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, IdCoderMIME, IdURI;
+
+type
+  THTTPVerb = (hvGET, hvPOST, hvPUT, hvDELETE, hvOPTIONS);
+
+  TServerEndpoints = class
+  private
+    FServer: TIdHTTPServer;
+
+    procedure OnCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure ProcessarRequisicao(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure ConfigurarCORS(AResponseInfo: TIdHTTPResponseInfo);
+
+    function ObterVerboHTTP(const Method: string): THTTPVerb;
+    function ExtrairParamPath(const URL: string; Indice: Integer): string;
+
+    // Roteamento
+    procedure RotaStatus(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure RotaPacientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure RotaPacienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Iniciar(const Porta: Integer = 8080);
+    procedure Parar;
+
+    property Server: TIdHTTPServer read FServer;
+  end;
+
+var
+  FServerEndpoints: TServerEndpoints;
+
+implementation
+
+uses
+  ModelDB;
+
+{ TServerEndpoints }
+
+constructor TServerEndpoints.Create;
+begin
+  FServer := TIdHTTPServer.Create(nil);
+  FServer.OnCommandGet := OnCommand;
+  FServer.OnCommandOther := OnCommand;
+end;
+
+destructor TServerEndpoints.Destroy;
+begin
+  if Assigned(FServer) then
+  begin
+    if FServer.Active then
+      FServer.Active := False;
+    FServer.Free;
+  end;
+  inherited;
+end;
+
+procedure TServerEndpoints.Iniciar(const Porta: Integer);
+begin
+  FServer.DefaultPort := Porta;
+  FServer.Active := True;
+
+  WriteLn('Servidor HTTP iniciado na porta ' + IntToStr(Porta));
+  WriteLn('Endpoints disponíveis:');
+  WriteLn('GET    /api/status');
+  WriteLn('GET    /api/pacientes');
+  WriteLn('GET    /api/pacientes/:id');
+  WriteLn('POST   /api/pacientes');
+  WriteLn('PUT    /api/pacientes/:id');
+  WriteLn('DELETE /api/pacientes/:id');
+end;
+
+procedure TServerEndpoints.Parar;
+begin
+  if FServer.Active then
+  begin
+    FServer.Active := False;
+    WriteLn('Servidor HTTP encerrado');
+  end;
+end;
+
+procedure TServerEndpoints.OnCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+begin
+  try
+    AResponseInfo.ContentType := 'application/json; charset=UTF-8';
+    ConfigurarCORS(AResponseInfo);
+
+    if SameText(ARequestInfo.Command, 'OPTIONS') then
+    begin
+      AResponseInfo.ResponseNo := 200;
+      Exit;
+    end;
+
+    ProcessarRequisicao(ARequestInfo, AResponseInfo);
+  except
+    on E: Exception do
+    begin
+      AResponseInfo.ResponseNo := 500;
+      AResponseInfo.ContentText := Format('{"error":"Erro interno: %s"}', [E.Message]);
+    end;
+  end;
+end;
+
+procedure TServerEndpoints.ProcessarRequisicao(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  Path, IdParam: string;
+  Verbo: THTTPVerb;
+begin
+  Path := ARequestInfo.URI;
+  Verbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  if not DBModel.FDConnection.Connected then
+    DBModel.ConectarBanco;
+
+  if Path = '/api/status' then
+  begin
+    if Verbo = hvGET then
+      RotaStatus(ARequestInfo, AResponseInfo)
+    else
+      AResponseInfo.ResponseNo := 405;
+  end
+  else if Path = '/api/pacientes' then
+  begin
+    if Verbo in [hvGET, hvPOST] then
+      RotaPacientes(ARequestInfo, AResponseInfo)
+    else
+      AResponseInfo.ResponseNo := 405;
+  end
+  else if Path.StartsWith('/api/pacientes/') then
+  begin
+    IdParam := ExtrairParamPath(Path, 3);
+    if IdParam <> '' then
+      RotaPacienteById(ARequestInfo, AResponseInfo, IdParam)
+    else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "ID não fornecido"}';
+    end;
+  end
+  else
+  begin
+    AResponseInfo.ResponseNo := 404;
+    AResponseInfo.ContentText := '{"error":"Endpoint não encontrado"}';
+  end;
+end;
+
+procedure TServerEndpoints.ConfigurarCORS(AResponseInfo: TIdHTTPResponseInfo);
+begin
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Origin'] := '*';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Methods'] := 'GET, POST, PUT, DELETE, OPTIONS';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Headers'] := 'Content-Type, Authorization';
+end;
+
+function TServerEndpoints.ObterVerboHTTP(const Method: string): THTTPVerb;
+begin
+  if SameText(Method, 'GET') then Result := hvGET
+  else if SameText(Method, 'POST') then Result := hvPOST
+  else if SameText(Method, 'PUT') then Result := hvPUT
+  else if SameText(Method, 'DELETE') then Result := hvDELETE
+  else if SameText(Method, 'OPTIONS') then Result := hvOPTIONS
+  else Result := hvGET;
+end;
+
+function TServerEndpoints.ExtrairParamPath(const URL: string; Indice: Integer): string;
+var
+  Partes: TArray<string>;
+begin
+  Result := '';
+  Partes := URL.Split(['/']);
+  if (Indice >= 0) and (Indice < Length(Partes)) then
+    Result := Partes[Indice];
+end;
+
+procedure TServerEndpoints.RotaStatus(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  Obj: TJSONObject;
+begin
+  Obj := TJSONObject.Create;
+  try
+    Obj.AddPair('status', 'online');
+    Obj.AddPair('version', '1.0.0');
+    Obj.AddPair('database', BoolToStr(DBModel.FDConnection.Connected, True));
+    Obj.AddPair('timestamp', FormatDateTime('yyyy-mm-dd hh:nn:ss', Now));
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := Obj.ToJSON;
+  finally
+    Obj.Free;
+  end;
+end;
+
+// Os métodos abaixo são placeholders que você substituirá pelo controller de pacientes
+
+procedure TServerEndpoints.RotaPacientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+begin
+  // Aqui você chamará: ControllerPaciente.ListarTodos ou ControllerPaciente.Criar
+  AResponseInfo.ResponseNo := 501;
+  AResponseInfo.ContentText := '{"error":"Não implementado"}';
+end;
+
+procedure TServerEndpoints.RotaPacienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+begin
+  case ObterVerboHTTP(ARequestInfo.Command) of
+    hvGET: AResponseInfo.ContentText := '{"error":"GET por ID não implementado"}';
+    hvPUT: AResponseInfo.ContentText := '{"error":"PUT por ID não implementado"}';
+    hvDELETE: AResponseInfo.ContentText := '{"error":"DELETE por ID não implementado"}';
+  else
+    AResponseInfo.ResponseNo := 405;
+    Exit;
+  end;
+
+  AResponseInfo.ResponseNo := 501;
+end;
+
+end.
+

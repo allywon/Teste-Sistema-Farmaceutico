@@ -1,0 +1,359 @@
+unit DBCreateTables;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, ModelDB, FireDAC.Stan.Intf,
+  FireDAC.Stan.Option, FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf,
+  FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys,
+  FireDAC.Phys.MySQL, FireDAC.Phys.MySQLDef, FireDAC.VCLUI.Wait,
+  FireDAC.Stan.Param, FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, Data.DB,
+  FireDAC.Comp.DataSet, FireDAC.Comp.Client, Model.Procedimento.Tipo;
+
+type
+  TDBCreateTables = class
+  private
+    FModelDB: TModelDB;
+
+    function GetScriptCreateTabelaPacientes: string;
+    function GetScriptCreateTabelaFarmaceuticos: string;
+    function GetScriptCreateTabelaProcedimentos: string;
+    function GetScriptCreateTabelaServicosFarmaceuticos: string;
+    function GetScriptCreateTabelaServicosFarmaceuticosItens: string;
+
+    function ExecutarSQL(const SQL: string; const Descricao: string): Boolean;
+
+    function InserirProcedimentosPadroes: Boolean;
+
+  public
+    constructor Create(AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    function CriarTabelas: Boolean;
+
+    function CriarTabelaPacientes: Boolean;
+    function CriarTabelaFarmaceuticos: Boolean;
+    function CriarTabelaProcedimentos: Boolean;
+    function CriarTabelaServicosFarmaceuticos: Boolean;
+    function CriarTabelaServicosFarmaceuticosItens: Boolean;
+
+    function InserirDadosIniciais: Boolean;
+
+    function VerificarECriarBancoDados: Boolean;
+  end;
+
+implementation
+
+{ TDBCreateTables }
+
+constructor TDBCreateTables.Create(AModelDB: TModelDB);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+end;
+
+destructor TDBCreateTables.Destroy;
+begin
+  inherited;
+end;
+
+function TDBCreateTables.ExecutarSQL(const SQL, Descricao: string): Boolean;
+var
+  Query: TFDQuery;
+begin
+  Result := False;
+  Query := TFDQuery.Create(nil);
+  try
+    Query.Connection := FModelDB.FDConnection;
+    try
+      Query.SQL.Text := SQL;
+      Query.ExecSQL;
+      Result := True;
+      WriteLn('Sucesso: ', Descricao);
+    except
+      on E: Exception do
+      begin
+        WriteLn('Erro ao ', Descricao, ': ', E.Message);
+      end;
+    end;
+  finally
+    Query.Free;
+  end;
+end;
+
+function TDBCreateTables.GetScriptCreateTabelaPacientes: string;
+begin
+  Result :=
+    'CREATE TABLE IF NOT EXISTS pacientes (' +
+    '  id BIGINT NOT NULL AUTO_INCREMENT,' +
+    '  nome VARCHAR(100) NOT NULL,' +
+    '  cpf VARCHAR(14) NOT NULL,' +
+    '  data_nascimento DATE,' +
+    '  PRIMARY KEY (id),' +
+    '  UNIQUE INDEX idx_pacientes_cpf (cpf)' +
+    ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;';
+end;
+
+function TDBCreateTables.GetScriptCreateTabelaFarmaceuticos: string;
+begin
+  Result :=
+    'CREATE TABLE IF NOT EXISTS farmaceuticos (' +
+    '  id BIGINT NOT NULL AUTO_INCREMENT,' +
+    '  nome VARCHAR(100) NOT NULL,' +
+    '  cpf VARCHAR(14) NOT NULL,' +
+    '  data_nascimento DATE,' +
+    '  crf VARCHAR(20) NOT NULL,' +
+    '  especializacao VARCHAR(100),' +
+    '  PRIMARY KEY (id),' +
+    '  UNIQUE INDEX idx_farmaceuticos_cpf (cpf),' +
+    '  UNIQUE INDEX idx_farmaceuticos_crf (crf)' +
+    ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;';
+end;
+
+function TDBCreateTables.GetScriptCreateTabelaProcedimentos: string;
+begin
+  Result :=
+    'CREATE TABLE IF NOT EXISTS procedimentos (' +
+    '  id BIGINT NOT NULL AUTO_INCREMENT,' +
+    '  tipo INT NOT NULL,' +
+    '  descricao VARCHAR(200) NOT NULL,' +
+    '  valor DECIMAL(10,2) NOT NULL DEFAULT 0,' +
+    '  PRIMARY KEY (id)' +
+    ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;';
+end;
+
+function TDBCreateTables.GetScriptCreateTabelaServicosFarmaceuticos: string;
+begin
+  Result :=
+    'CREATE TABLE IF NOT EXISTS servicos_farmaceuticos (' +
+    '  id BIGINT NOT NULL AUTO_INCREMENT,' +
+    '  data DATETIME NOT NULL,' +
+    '  farmaceutico_id BIGINT NOT NULL,' +
+    '  paciente_id BIGINT NOT NULL,' +
+    '  observacoes TEXT,' +
+    '  valor_total DECIMAL(10,2) NOT NULL DEFAULT 0,' +
+    '  PRIMARY KEY (id),' +
+    '  INDEX idx_servico_farm_farmaceutico (farmaceutico_id),' +
+    '  INDEX idx_servico_farm_paciente (paciente_id),' +
+    '  CONSTRAINT fk_servico_farm_farmaceutico FOREIGN KEY (farmaceutico_id) ' +
+    '    REFERENCES farmaceuticos (id) ON DELETE RESTRICT ON UPDATE CASCADE,' +
+    '  CONSTRAINT fk_servico_farm_paciente FOREIGN KEY (paciente_id) ' +
+    '    REFERENCES pacientes (id) ON DELETE RESTRICT ON UPDATE CASCADE' +
+    ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;';
+end;
+
+function TDBCreateTables.GetScriptCreateTabelaServicosFarmaceuticosItens: string;
+begin
+  Result :=
+    'CREATE TABLE IF NOT EXISTS servicos_farmaceuticos_itens (' +
+    '  id BIGINT NOT NULL AUTO_INCREMENT,' +
+    '  servico_id BIGINT NOT NULL,' +
+    '  procedimento_id BIGINT NOT NULL,' +
+    '  valor DECIMAL(10,2) NOT NULL DEFAULT 0,' +
+    '  PRIMARY KEY (id),' +
+    '  INDEX idx_servico_item_servico (servico_id),' +
+    '  INDEX idx_servico_item_procedimento (procedimento_id),' +
+    '  CONSTRAINT fk_servico_item_servico FOREIGN KEY (servico_id) ' +
+    '    REFERENCES servicos_farmaceuticos (id) ON DELETE CASCADE ON UPDATE CASCADE,' +
+    '  CONSTRAINT fk_servico_item_procedimento FOREIGN KEY (procedimento_id) ' +
+    '    REFERENCES procedimentos (id) ON DELETE RESTRICT ON UPDATE CASCADE' +
+    ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;';
+end;
+
+function TDBCreateTables.InserirDadosIniciais: Boolean;
+var
+  Sucesso: Boolean;
+begin
+  WriteLn('Iniciando inserção de dados iniciais...');
+
+  Sucesso := InserirProcedimentosPadroes;
+
+  if Sucesso then
+    WriteLn('Todos os dados iniciais foram inseridos com sucesso!')
+  else
+    WriteLn('Houve erros na inserção de alguns dados iniciais. Verifique os logs acima.');
+
+  Result := Sucesso;
+end;
+
+function TDBCreateTables.InserirProcedimentosPadroes: Boolean;
+var
+  Query: TFDQuery;
+  Tipo: TTipoProcedimento;
+  SQL: string;
+begin
+  Result := False;
+  Query := TFDQuery.Create(nil);
+  try
+    Query.Connection := FModelDB.FDConnection;
+
+    Query.SQL.Text := 'SELECT COUNT(*) FROM procedimentos';
+    Query.Open;
+
+    if Query.Fields[0].AsInteger = 0 then
+    begin
+      WriteLn('Inserindo procedimentos padrões...');
+
+      for Tipo := Low(TTipoProcedimento) to High(TTipoProcedimento) do
+      begin
+        // Define valores padrão para cada tipo de procedimento
+        SQL := 'INSERT INTO procedimentos (tipo, descricao, valor) VALUES (:tipo, :descricao, :valor)';
+
+        Query.Close;
+        Query.SQL.Text := SQL;
+        Query.ParamByName('tipo').AsInteger := Ord(Tipo);
+        Query.ParamByName('descricao').AsString := TipoProcedimentoDescricao(Tipo);
+
+        // Define um valor padrão para cada tipo de procedimento
+        case Tipo of
+          tpAtencaoDomiciliar:    Query.ParamByName('valor').AsFloat := 120.00;
+          tpPressaoArterial:      Query.ParamByName('valor').AsFloat := 30.00;
+          tpTemperaturaCorporal:  Query.ParamByName('valor').AsFloat := 20.00;
+          tpGlicemiaCapilar:      Query.ParamByName('valor').AsFloat := 40.00;
+          tpInalacao:             Query.ParamByName('valor').AsFloat := 50.00;
+          tpInjetaveis:           Query.ParamByName('valor').AsFloat := 60.00;
+        end;
+
+        try
+          Query.ExecSQL;
+          WriteLn('Procedimento inserido: ', TipoProcedimentoToStr(Tipo));
+        except
+          on E: Exception do
+          begin
+            WriteLn('Erro ao inserir procedimento ', TipoProcedimentoToStr(Tipo), ': ', E.Message);
+            Exit(False);
+          end;
+        end;
+      end;
+
+      WriteLn('Todos os procedimentos padrões foram inseridos com sucesso!');
+    end
+    else
+      WriteLn('Procedimentos já existem no banco de dados. Nenhum procedimento padrão foi inserido.');
+
+    Result := True;
+  finally
+    Query.Free;
+  end;
+end;
+
+function TDBCreateTables.CriarTabelaPacientes: Boolean;
+begin
+  Result := ExecutarSQL(
+    GetScriptCreateTabelaPacientes,
+    'criar tabela de pacientes'
+  );
+end;
+
+function TDBCreateTables.CriarTabelaFarmaceuticos: Boolean;
+begin
+  Result := ExecutarSQL(
+    GetScriptCreateTabelaFarmaceuticos,
+    'criar tabela de farmaceuticos'
+  );
+end;
+
+function TDBCreateTables.CriarTabelaProcedimentos: Boolean;
+begin
+  Result := ExecutarSQL(
+    GetScriptCreateTabelaProcedimentos,
+    'criar tabela de procedimentos'
+  );
+end;
+
+function TDBCreateTables.CriarTabelaServicosFarmaceuticos: Boolean;
+begin
+  Result := ExecutarSQL(
+    GetScriptCreateTabelaServicosFarmaceuticos,
+    'criar tabela de servicos farmaceuticos'
+  );
+end;
+
+function TDBCreateTables.CriarTabelaServicosFarmaceuticosItens: Boolean;
+begin
+  Result := ExecutarSQL(
+    GetScriptCreateTabelaServicosFarmaceuticosItens,
+    'criar tabela de itens de servicos farmaceuticos'
+  );
+end;
+
+function TDBCreateTables.CriarTabelas: Boolean;
+var
+  Sucesso: Boolean;
+begin
+  WriteLn('Iniciando criação das tabelas...');
+
+  // Cria as tabelas na ordem correta respeitando as relações de chave estrangeira
+  Sucesso := CriarTabelaPacientes and
+             CriarTabelaFarmaceuticos and
+             CriarTabelaProcedimentos and
+             CriarTabelaServicosFarmaceuticos and
+             CriarTabelaServicosFarmaceuticosItens;
+
+  if Sucesso then
+    WriteLn('Todas as tabelas foram criadas com sucesso!')
+  else
+    WriteLn('Houve erros na criação de algumas tabelas. Verifique os logs acima.');
+
+  Result := Sucesso;
+end;
+
+function TDBCreateTables.VerificarECriarBancoDados: Boolean;
+var
+  Query: TFDQuery;
+  BancoExiste: Boolean;
+  DatabaseName: string;
+begin
+  Result := False;
+
+  // Salva o nome do banco para restaurar depois
+  DatabaseName := FModelDB.FDConnection.Params.Database;
+
+  // Temporariamente remove o banco de dados para poder se conectar sem ele
+  FModelDB.FDConnection.Params.Database := '';
+
+  try
+    // Conecta ao MySQL sem especificar um banco de dados
+    FModelDB.FDConnection.Connected := True;
+
+    Query := TFDQuery.Create(nil);
+    try
+      Query.Connection := FModelDB.FDConnection;
+
+      // Verifica se o banco existe
+      Query.SQL.Text := 'SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = :dbname';
+      Query.ParamByName('dbname').AsString := DatabaseName;
+      Query.Open;
+
+      BancoExiste := not Query.Eof;
+
+      if not BancoExiste then
+      begin
+        WriteLn('Banco de dados "', DatabaseName, '" não existe. Criando...');
+
+        // Cria o banco de dados
+        Query.Close;
+        Query.SQL.Text := 'CREATE DATABASE IF NOT EXISTS ' + DatabaseName + ' CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci';
+        Query.ExecSQL;
+
+        WriteLn('Banco de dados criado com sucesso!');
+      end;
+
+      Result := True;
+    finally
+      Query.Free;
+      FModelDB.FDConnection.Connected := False;
+    end;
+  except
+    on E: Exception do
+    begin
+      WriteLn('Erro ao verificar/criar banco de dados: ', E.Message);
+      Result := False;
+    end;
+  end;
+
+  // Restaura o nome do banco
+  FModelDB.FDConnection.Params.Database := DatabaseName;
+end;
+
+end.

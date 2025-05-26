@@ -1,0 +1,204 @@
+unit Controller.Pessoa;
+
+interface
+
+uses
+  System.SysUtils, System.JSON, System.Generics.Collections,
+  Service.RESTBase, Model.Pessoa;
+
+type
+  TPessoaTipo = (ptPaciente, ptFarmaceutico);
+
+  TPessoaController = class(TRESTServiceBase)
+  public
+    function BuscarTodos(Tipo: TPessoaTipo): TObjectList<TPessoaBase>;
+    function BuscarPorId(Tipo: TPessoaTipo; const Id: Integer): TPessoaBase;
+    function Salvar(APessoa: TPessoaBase; Tipo: TPessoaTipo): Boolean;
+    function Excluir(Id: Integer; Tipo: TPessoaTipo): Boolean;
+  end;
+
+implementation
+
+uses
+  REST.Types, DateUtils, Farmaceutico.Mapper, Paciente.Mapper;
+
+function GetResourceName(Tipo: TPessoaTipo): string;
+begin
+  case Tipo of
+    ptPaciente: Result := 'pacientes';
+    ptFarmaceutico: Result := 'farmaceuticos';
+  end;
+end;
+
+function TPessoaController.BuscarTodos(Tipo: TPessoaTipo): TObjectList<TPessoaBase>;
+var
+  lJSONArray: TJSONArray;
+  lItem: TJSONValue;
+  lObj: TJSONObject;
+  lPessoa: TPessoaBase;
+  lResponseContent: string;
+begin
+  Result := TObjectList<TPessoaBase>.Create(True);
+  try
+    lResponseContent := ExecutarRequisicao(rmGET, GetResourceName(Tipo), '');
+
+    if FRESTResponse.StatusCode = 200 then
+    begin
+      lJSONArray := TJSONObject.ParseJSONValue(lResponseContent) as TJSONArray;
+      try
+        for lItem in lJSONArray do
+        begin
+          lObj := lItem as TJSONObject;
+
+          case Tipo of
+            ptPaciente:
+              lPessoa := TPacienteMapper.Create.DeJSON(lObj);
+            ptFarmaceutico:
+              lPessoa := TFarmaceuticoMapper.Create.DeJSON(lObj);
+          end;
+
+          Result.Add(lPessoa);
+        end;
+      finally
+        lJSONArray.Free;
+      end;
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+function TPessoaController.BuscarPorId(Tipo: TPessoaTipo; const Id: Integer): TPessoaBase;
+var
+  lResource: string;
+  lResponseContent: string;
+  lJSON: TJSONObject;
+begin
+  Result := nil;
+  lResource := Format('%s/%d', [GetResourceName(Tipo), Id]);
+
+  lResponseContent := ExecutarRequisicao(rmGET, lResource, '');
+
+  if FRESTResponse.StatusCode = 200 then
+  begin
+    lJSON := TJSONObject.ParseJSONValue(lResponseContent) as TJSONObject;
+    try
+      case Tipo of
+        ptPaciente:
+          begin
+            Result := TPacienteMapper.Create.DeJSON(lJSON);
+          end;
+
+        ptFarmaceutico:
+          begin
+            Result := TFarmaceuticoMapper.Create.DeJSON(lJSON);
+          end;
+      end;
+    finally
+      lJSON.Free;
+    end;
+  end;
+end;
+
+function TPessoaController.Salvar(APessoa: TPessoaBase; Tipo: TPessoaTipo): Boolean;
+var
+  lJSON: TJSONObject;
+  lResource: string;
+  lMetodo: TRESTRequestMethod;
+  lResponseContent: string;
+begin
+  // Serialização delegada ao mapper correto
+  case Tipo of
+    ptPaciente:
+      lJSON := TPacienteMapper.Create.ParaJSON(TPaciente(APessoa));
+    ptFarmaceutico:
+      lJSON := TFarmaceuticoMapper.Create.ParaJSON(TFarmaceutico(APessoa));
+  else
+    raise Exception.Create('Tipo de pessoa não suportado.');
+  end;
+
+  try
+    if APessoa.Id = 0 then
+    begin
+      lMetodo := rmPOST;
+      lResource := GetResourceName(Tipo);
+    end
+    else
+    begin
+      lMetodo := rmPUT;
+      lResource := Format('%s/%d', [GetResourceName(Tipo), APessoa.Id]);
+    end;
+
+    try
+      lResponseContent := ExecutarRequisicao(lMetodo, lResource, lJSON.ToJSON);
+      Result := (FRESTResponse.StatusCode in [200, 201]);
+    except
+      on E: Exception do
+      begin
+        APessoa.Aviso := FRESTResponse.Content;
+        Result := False;
+      end;
+    end;
+  finally
+    lJSON.Free;
+  end;
+end;
+//var
+//  lJSON: TJSONObject;
+//  lResource: string;
+//  lMetodo: TRESTRequestMethod;
+//  lResponseContent: string;
+//begin
+//  lJSON := TJSONObject.Create;
+//  try
+//    lJSON.AddPair('nome', APessoa.Nome);
+//    lJSON.AddPair('cpf', APessoa.CPF);
+//    lJSON.AddPair('dataNascimento', DateToISO8601(APessoa.DataNascimento, False));
+//
+//    if (Tipo = ptFarmaceutico) and (APessoa is TFarmaceutico) then
+//    begin
+//      lJSON.AddPair('crf', TFarmaceutico(APessoa).CRF);
+//      lJSON.AddPair('especializacao', TFarmaceutico(APessoa).Especializacao);
+//    end;
+//
+//    if APessoa.Id = 0 then
+//    begin
+//      lMetodo := rmPOST;
+//      lResource := GetResourceName(Tipo);
+//    end
+//    else
+//    begin
+//      lMetodo := rmPUT;
+//      lResource := Format('%s/%d', [GetResourceName(Tipo), APessoa.Id]);
+//    end;
+//
+//    try
+//      lResponseContent := ExecutarRequisicao(lMetodo, lResource, lJSON.ToJSON);
+//      Result := (FRESTResponse.StatusCode in [200, 201]);
+//    except
+//        on E: Exception do
+//        begin
+//          APessoa.Aviso := FRESTResponse.Content;
+//          Result := False;
+//        end;
+//      end;
+//  finally
+//    lJSON.Free;
+//  end;
+//end;
+
+function TPessoaController.Excluir(Id: Integer; Tipo: TPessoaTipo): Boolean;
+var
+  lResource: string;
+  lResponseContent: string;
+begin
+  lResource := Format('%s/%d', [GetResourceName(Tipo), Id]);
+
+  lResponseContent := ExecutarRequisicao(rmDELETE, lResource, '');
+
+  Result := (FRESTResponse.StatusCode in [200, 204]);
+end;
+
+end.
+

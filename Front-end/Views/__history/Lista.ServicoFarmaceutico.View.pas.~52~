@@ -1,0 +1,373 @@
+unit Lista.ServicoFarmaceutico.View;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes,
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, Vcl.StdCtrls,
+  Vcl.ComCtrls, Vcl.Buttons, Vcl.Grids, Vcl.DBGrids, Data.DB, FireDAC.Comp.Client,
+  FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Param, FireDAC.Stan.Error,
+  FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf, FireDAC.Comp.DataSet,
+  System.Generics.Collections,
+  Model.ServicoFarmaceutico, Model.Pessoa, Controller.ServicoFarmaceutico,
+  Cadastro.ServicoFarmaceutico.View;
+
+type
+  TfListaServicoFarmaceutico = class(TForm)
+    pnlTop: TPanel;
+    pnlClient: TPanel;
+    pnlBottom: TPanel;
+    lblTitulo: TLabel;
+    grpFiltros: TGroupBox;
+    lblFarmaceutico: TLabel;
+    lblPaciente: TLabel;
+    btnPesquisar: TBitBtn;
+    btnLimparFiltros: TBitBtn;
+    dbgServicos: TDBGrid;
+    dsServicos: TDataSource;
+    btnNovo: TBitBtn;
+    btnAlterar: TBitBtn;
+    btnExcluir: TBitBtn;
+    btnFechar: TBitBtn;
+    dtiDataInicio: TDateTimePicker;
+    dtiDataFim: TDateTimePicker;
+    lblDataInicio: TLabel;
+    lblDataFim: TLabel;
+    cmbFarmaceutico: TComboBox;
+    cmbPaciente: TComboBox;
+    ckPeriodoCompleto: TCheckBox;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnPesquisarClick(Sender: TObject);
+    procedure btnLimparFiltrosClick(Sender: TObject);
+    procedure btnNovoClick(Sender: TObject);
+    procedure btnAlterarClick(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+    procedure btnFecharClick(Sender: TObject);
+    procedure dbgServicosDblClick(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+    procedure cmbFarmaceuticoSelect(Sender: TObject);
+    procedure cmbPacienteSelect(Sender: TObject);
+    procedure ckPeriodoCompletoClick(Sender: TObject);
+  private
+    FController: TServicoFarmaceuticoController;
+    FLstServicosFarmaceuticos:TFDMemTable;
+
+    procedure PopulaMemtable(AServicos: TObjectList<TServicoFarmaceutico>);
+    procedure AbrirCadastro(AId: Int64);
+    procedure PreparaMemTable;
+    procedure CarregarComboFarmaceuticos;
+    procedure CarregarComboPacientes;
+    procedure FiltrarRegistros;
+    procedure LimparFiltros;
+  public
+    { Public declarations }
+  end;
+
+var
+  fListaServicoFarmaceutico: TfListaServicoFarmaceutico;
+
+implementation
+
+{$R *.dfm}
+
+uses DateUtils, Controller.Pessoa;
+
+procedure TfListaServicoFarmaceutico.FiltrarRegistros;
+var
+  lFarmaceuticoId, lPacienteId: Int64;
+  lFiltro: string;
+begin
+  lFarmaceuticoId := 0;
+  lPacienteId := 0;
+
+  if (cmbFarmaceutico.ItemIndex >= 0) and (cmbFarmaceutico.Items.Objects[cmbFarmaceutico.ItemIndex] <> nil) then
+    lFarmaceuticoId := Int64(cmbFarmaceutico.Items.Objects[cmbFarmaceutico.ItemIndex]);
+
+  if (cmbPaciente.ItemIndex >= 0) and (cmbPaciente.Items.Objects[cmbPaciente.ItemIndex] <> nil) then
+    lPacienteId := Int64(cmbPaciente.Items.Objects[cmbPaciente.ItemIndex]);
+
+  if (lFarmaceuticoId = 0) and (lPacienteId = 0) then
+  begin
+    FLstServicosFarmaceuticos.Filtered := False;
+    FLstServicosFarmaceuticos.Filter := '';
+    Exit;
+  end;
+
+  lFiltro := '';
+
+  if lFarmaceuticoId > 0 then
+    lFiltro := Format('FarmaceuticoId = %d', [lFarmaceuticoId]);
+
+  if lPacienteId > 0 then
+  begin
+    if lFiltro <> '' then
+      lFiltro := lFiltro + ' AND '; // Use OR se quiser união ao invés de interseção
+    lFiltro := lFiltro + Format('PacienteId = %d', [lPacienteId]);
+  end;
+
+  FLstServicosFarmaceuticos.Filtered := False; // Desativa antes de alterar
+  FLstServicosFarmaceuticos.FilterOptions := [foCaseInsensitive];
+  FLstServicosFarmaceuticos.Filter := lFiltro;
+  FLstServicosFarmaceuticos.Filtered := True;
+end;
+
+procedure TfListaServicoFarmaceutico.FormCreate(Sender: TObject);
+begin
+  FController := TServicoFarmaceuticoController.Create;
+  PreparaMemTable;
+end;
+
+procedure TfListaServicoFarmaceutico.FormDestroy(Sender: TObject);
+begin
+  FreeAndNil(FController);
+  FreeAndNil(FLstServicosFarmaceuticos);
+end;
+
+procedure TfListaServicoFarmaceutico.FormShow(Sender: TObject);
+begin
+  CarregarComboFarmaceuticos;
+  CarregarComboPacientes;
+  LimparFiltros;
+  btnPesquisarClick(Self);
+end;
+
+procedure TfListaServicoFarmaceutico.LimparFiltros;
+begin
+  cmbFarmaceutico.ItemIndex := 0;
+  cmbPaciente.ItemIndex := 0;
+
+  dtiDataInicio.Date := StartOfTheMonth(Now);
+  dtiDataFim.Date := EndOfTheMonth(Now);
+end;
+
+procedure TfListaServicoFarmaceutico.PreparaMemTable;
+begin
+  FLstServicosFarmaceuticos := TFDMemTable.Create(Self);
+  with FLstServicosFarmaceuticos.FieldDefs do
+  begin
+    Add('Id', ftLargeint);
+    Add('Data', ftDate);
+    Add('FarmaceuticoId', ftLargeint);
+    Add('FarmaceuticoNome', ftString, 100);
+    Add('PacienteId', ftLargeint);
+    Add('PacienteNome', ftString, 100);
+    Add('ValorTotal', ftCurrency);
+    Add('Observacoes', ftString, 100);
+  end;
+  FLstServicosFarmaceuticos.CreateDataSet;
+  dsServicos.DataSet := FLstServicosFarmaceuticos;
+end;
+
+procedure TfListaServicoFarmaceutico.CarregarComboFarmaceuticos;
+var
+  FarmaceuticoController: TPessoaController;
+  Farmaceuticos: TObjectList<TPessoaBase>;
+  Farmaceutico: TPessoaBase;
+begin
+  FarmaceuticoController := TPessoaController.Create;
+  try
+    Farmaceuticos := FarmaceuticoController.BuscarTodos(TPessoaTipo.ptFarmaceutico);
+    cmbFarmaceutico.Clear;
+    cmbFarmaceutico.Items.AddObject('Todos os Farmaceuticos', TObject(0));
+    for Farmaceutico in Farmaceuticos do
+      cmbFarmaceutico.Items.AddObject(Farmaceutico.Nome, TObject(Farmaceutico.Id));
+  finally
+    FarmaceuticoController.Free;
+    Farmaceuticos.Free;
+  end;
+end;
+
+procedure TfListaServicoFarmaceutico.CarregarComboPacientes;
+var
+  PacienteController: TPessoaController;
+  Pacientes: TObjectList<TPessoaBase>;
+  Paciente: TPessoaBase;
+begin
+  PacienteController := TPessoaController.Create;
+  try
+    Pacientes := PacienteController.BuscarTodos(TPessoaTipo.ptPaciente);
+    cmbPaciente.Clear;
+    cmbPaciente.Items.AddObject('Todos os Pacientes', TObject(0));
+    for Paciente in Pacientes do
+      cmbPaciente.Items.AddObject(Paciente.Nome, TObject(Paciente.Id));
+  finally
+    PacienteController.Free;
+    Pacientes.Free;
+  end;
+end;
+
+procedure TfListaServicoFarmaceutico.PopulaMemtable(AServicos: TObjectList<TServicoFarmaceutico>);
+var
+  lServicoFarmaceutico: TServicoFarmaceutico;
+begin
+  if not Assigned(AServicos) then
+    Exit;
+
+  FLstServicosFarmaceuticos.EmptyDataSet;
+
+  for lServicoFarmaceutico in AServicos do
+  begin
+    FLstServicosFarmaceuticos.Append;
+    FLstServicosFarmaceuticos.FieldByName('Id').AsLargeInt := lServicoFarmaceutico.Id;
+    FLstServicosFarmaceuticos.FieldByName('Data').AsDateTime := lServicoFarmaceutico.Data;
+    FLstServicosFarmaceuticos.FieldByName('FarmaceuticoId').AsLargeInt := lServicoFarmaceutico.Farmaceutico.Id;
+    FLstServicosFarmaceuticos.FieldByName('FarmaceuticoNome').AsString := lServicoFarmaceutico.Farmaceutico.Nome;
+    FLstServicosFarmaceuticos.FieldByName('PacienteId').AsLargeInt := lServicoFarmaceutico.Paciente.Id;
+    FLstServicosFarmaceuticos.FieldByName('PacienteNome').AsString := lServicoFarmaceutico.Paciente.Nome;
+    FLstServicosFarmaceuticos.FieldByName('ValorTotal').AsCurrency := lServicoFarmaceutico.ValorTotal;
+    FLstServicosFarmaceuticos.FieldByName('Observacoes').AsString := lServicoFarmaceutico.Observacoes;
+    FLstServicosFarmaceuticos.Post;
+  end;
+
+  if FLstServicosFarmaceuticos.RecordCount > 0 then
+    FLstServicosFarmaceuticos.First;
+end;
+
+procedure TfListaServicoFarmaceutico.ckPeriodoCompletoClick(Sender: TObject);
+begin
+   dtiDataInicio.Enabled := not ckPeriodoCompleto.Checked;
+   dtiDataFim.Enabled := not ckPeriodoCompleto.Checked;
+end;
+
+procedure TfListaServicoFarmaceutico.cmbFarmaceuticoSelect(Sender: TObject);
+begin
+  FiltrarRegistros;
+end;
+
+procedure TfListaServicoFarmaceutico.cmbPacienteSelect(Sender: TObject);
+begin
+  FiltrarRegistros;
+end;
+
+procedure TfListaServicoFarmaceutico.btnPesquisarClick(Sender: TObject);
+var
+  lServicosFarmaceuticos: TObjectList<TServicoFarmaceutico>;
+begin
+  FLstServicosFarmaceuticos.Filtered := False;
+  FLstServicosFarmaceuticos.DisableControls;
+
+  try
+    FLstServicosFarmaceuticos.EmptyDataSet;
+
+    if ckPeriodoCompleto.Checked then
+      lServicosFarmaceuticos := FController.BuscarTodos
+    else
+      lServicosFarmaceuticos := FController.BuscarPorPeriodo(dtiDataInicio.Date, dtiDataFim.Date);
+
+    PopulaMemtable(lServicosFarmaceuticos);
+  finally
+    FLstServicosFarmaceuticos.EnableControls;
+    FiltrarRegistros;
+  end;
+end;
+//var
+//  lServicosFarmaceuticos: TObjectList<TServicoFarmaceutico>;
+//  lFarmaceuticoId, lPacienteId: Int64;
+//begin
+//  lServicosFarmaceuticos := nil;
+//
+//  try
+//    if cmbFarmaceutico.ItemIndex >= 0 then
+//      lFarmaceuticoId := Integer(cmbFarmaceutico.Items.Objects[cmbFarmaceutico.ItemIndex]);
+//
+//    if cmbPaciente.ItemIndex >= 0 then
+//      lPacienteId := Integer(cmbPaciente.Items.Objects[cmbPaciente.ItemIndex]);
+//
+//    // Prioridade para os filtros mais específicos
+//    if (lFarmaceuticoId > 0) and (lPacienteId > 0) then
+//    begin
+//      // Se temos os dois filtros, buscamos por período e filtramos na memória
+//      lServicosFarmaceuticos := FController.BuscarPorPeriodo(dtiDataInicio.Date, dtiDataFim.Date);
+//
+//      // Filtrar lista por farmacêutico e paciente
+//      if Assigned(lServicosFarmaceuticos) then
+//      begin
+//        for var i := lServicosFarmaceuticos.Count - 1 downto 0 do
+//        begin
+//          if (lServicosFarmaceuticos[i].Farmaceutico.Id <> FarmaceuticoId) or
+//             (lServicosFarmaceuticos[i].Paciente.Id <> PacienteId) then
+//            lServicosFarmaceuticos.Delete(i);
+//        end;
+//      end;
+//    end
+//    else if FarmaceuticoId > 0 then
+//      lServicosFarmaceuticos := FController.BuscarPorFarmaceutico(FarmaceuticoId)
+//    else if PacienteId > 0 then
+//      lServicosFarmaceuticos := FController.BuscarPorPaciente(PacienteId)
+//    else
+//      lServicosFarmaceuticos := FController.BuscarPorPeriodo(dtiDataInicio.Date, dtiDataFim.Date);
+//
+//    CarregarServicos(lServicosFarmaceuticos);
+//  finally
+//    if Assigned(lServicosFarmaceuticos) then
+//      lServicosFarmaceuticos.Free;
+//  end;
+//end;
+
+procedure TfListaServicoFarmaceutico.btnLimparFiltrosClick(Sender: TObject);
+begin
+  LimparFiltros;
+  btnPesquisarClick(Self);
+end;
+
+procedure TfListaServicoFarmaceutico.AbrirCadastro(AId: Int64);
+var
+  fCadastro: TfCadastroServicoFarmaceutico;
+begin
+  fCadastro := TfCadastroServicoFarmaceutico.Create(Self);
+  try
+    if AId > 0 then
+      fCadastro.EditarServico(AId)
+    else
+      fCadastro.NovoServico;
+
+    if fCadastro.ModalResult = mrOk then
+      btnPesquisarClick(nil);
+  finally
+    fCadastro.Free;
+  end;
+end;
+
+procedure TfListaServicoFarmaceutico.btnNovoClick(Sender: TObject);
+begin
+  AbrirCadastro(0);
+end;
+
+procedure TfListaServicoFarmaceutico.btnAlterarClick(Sender: TObject);
+begin
+  if FLstServicosFarmaceuticos.IsEmpty then
+    Exit;
+
+  AbrirCadastro(FLstServicosFarmaceuticos.FieldByName('Id').AsLargeInt);
+end;
+
+procedure TfListaServicoFarmaceutico.dbgServicosDblClick(Sender: TObject);
+begin
+  btnAlterarClick(Self);
+end;
+
+procedure TfListaServicoFarmaceutico.btnExcluirClick(Sender: TObject);
+begin
+  if FLstServicosFarmaceuticos.IsEmpty then
+    Exit;
+
+  if MessageDlg('Confirma a exclusão do serviço farmacêutico selecionado?',
+    TMsgDlgType.mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    if FController.Excluir(FLstServicosFarmaceuticos.FieldByName('Id').AsLargeInt) then
+    begin
+      ShowMessage('Serviço farmacêutico excluído com sucesso!');
+      btnPesquisarClick(nil);
+    end
+    else
+      ShowMessage('Erro ao excluir o serviço farmacêutico.');
+  end;
+end;
+
+procedure TfListaServicoFarmaceutico.btnFecharClick(Sender: TObject);
+begin
+  Close;
+end;
+
+end.

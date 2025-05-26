@@ -1,0 +1,427 @@
+unit Cadastro.ServicoFarmaceutico.View;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes,
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.Buttons,
+  Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Mask, System.Generics.Collections, System.DateUtils,
+  Model.ServicoFarmaceutico, Model.Procedimento, Model.Procedimento.Tipo, Model.Pessoa,
+  Controller.ServicoFarmaceutico, Data.DB, Vcl.Grids, Vcl.DBGrids, FireDAC.Comp.Client,
+  Vcl.Menus;
+
+type
+  TfCadastroServicoFarmaceutico = class(TForm)
+    pnlTop: TPanel;
+    pnlButtons: TPanel;
+    pnlContent: TPanel;
+    btnSalvar: TBitBtn;
+    btnCancelar: TBitBtn;
+    lblTitulo: TLabel;
+    pnlServicoInfo: TPanel;
+    lblData: TLabel;
+    dtpData: TDateTimePicker;
+    lblFarmaceutico: TLabel;
+    cmbFarmaceutico: TComboBox;
+    lblPaciente: TLabel;
+    cmbPaciente: TComboBox;
+    pnlObservacoes: TPanel;
+    mObservacoes: TMemo;
+    lblObservacoes: TLabel;
+    pnlProcedimentos: TPanel;
+    lblProcedimentos: TLabel;
+    grdProcedimentos: TDBGrid;
+    pnlAddProcedimento: TPanel;
+    lblTipoProcedimento: TLabel;
+    cmbProcedimento: TComboBox;
+    lblValor: TLabel;
+    edtValor: TEdit;
+    btnAdicionarProcedimento: TBitBtn;
+    dsProcedimentos: TDataSource;
+    pnlTotais: TPanel;
+    lblValorTotal: TLabel;
+    edtValorTotal: TEdit;
+    pmProcedimentos: TPopupMenu;
+    btAlterar: TMenuItem;
+    btExcluir: TMenuItem;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnSalvarClick(Sender: TObject);
+    procedure btnCancelarClick(Sender: TObject);
+    procedure btnAdicionarProcedimentoClick(Sender: TObject);
+    procedure btnRemoverProcedimentoClick(Sender: TObject);
+    procedure edtValorExit(Sender: TObject);
+    procedure cmbProcedimentoSelect(Sender: TObject);
+    procedure btAlterarClick(Sender: TObject);
+    procedure btExcluirClick(Sender: TObject);
+    procedure grdProcedimentosCellClick(Column: TColumn);
+    procedure pmProcedimentosPopup(Sender: TObject);
+  private
+    FServicoFarmaceuticoController: TServicoFarmaceuticoController;
+    FServicoFarmaceutico: TServicoFarmaceutico;
+    FProcedimentoSelecionado: Integer;
+    FLstProcedimentos: TFDMemtable;
+    FEditandoItem:Boolean;
+
+    procedure AtualizarGrid;
+    procedure AtualizarValorTotal;
+    procedure PopulaObjeto;
+    procedure LimparCamposProcedimento;
+    procedure PreparaMemtable;
+
+    function ValidaCadastro: Boolean;
+  public
+    FId:Int64;
+
+    constructor Create(AOwner: TComponent); override;
+    procedure NovoServico;
+    procedure EditarServico(const AId: Int64);
+  end;
+
+var
+  fCadastroServicoFarmaceutico: TfCadastroServicoFarmaceutico;
+
+implementation
+
+uses ComboBox.Helper, Controller.Procedimento, Controller.Pessoa;
+
+{$R *.dfm}
+
+{ TFrmCadastroServicoFarmaceutico }
+
+constructor TfCadastroServicoFarmaceutico.Create(AOwner: TComponent);
+begin
+  inherited;
+  FServicoFarmaceuticoController := TServicoFarmaceuticoController.Create;
+  FServicoFarmaceutico := TServicoFarmaceutico.Create;
+  FProcedimentoSelecionado := -1;
+end;
+
+procedure TfCadastroServicoFarmaceutico.FormCreate(Sender: TObject);
+begin
+  dtpData.Date := Date;
+  TComboBoxHelper.CarregarComboPessoas(cmbFarmaceutico, TPessoaTipo.ptFarmaceutico, 'Selecione um farmaceutico');
+  TComboBoxHelper.CarregarComboPessoas(cmbPaciente, TPessoaTipo.ptPaciente, 'Selecione um farmaceutico');
+  TComboBoxHelper.CarregarComboProcedimentos(cmbProcedimento, 'Selecione um procedimento');
+  PreparaMemtable;
+end;
+
+procedure TfCadastroServicoFarmaceutico.FormDestroy(Sender: TObject);
+begin
+  FServicoFarmaceutico.Free;
+  FServicoFarmaceuticoController.Free;
+end;
+
+procedure TfCadastroServicoFarmaceutico.NovoServico;
+begin
+  FServicoFarmaceutico.Limpar;
+  dtpData.Date := Date;
+  cmbFarmaceutico.ItemIndex := -1;
+  cmbPaciente.ItemIndex := -1;
+  mObservacoes.Lines.Clear;
+  AtualizarGrid;
+  AtualizarValorTotal;
+
+  lblTitulo.Caption := 'Novo Serviço Farmacêutico';
+  ShowModal;
+end;
+
+procedure TfCadastroServicoFarmaceutico.pmProcedimentosPopup(Sender: TObject);
+begin
+  grdProcedimentosCellClick(grdProcedimentos.Columns[0]);
+end;
+
+procedure TfCadastroServicoFarmaceutico.EditarServico(const AId: Int64);
+var
+  lServicoFarmaceutico: TServicoFarmaceutico;
+  i: Integer;
+  lItemProcedimento: TServicoFarmaceuticoItem;
+begin
+  lServicoFarmaceutico := FServicoFarmaceuticoController.BuscarPorId(AId);
+
+  if Assigned(lServicoFarmaceutico) then
+  begin
+    try
+      FServicoFarmaceutico.Limpar;
+
+      FServicoFarmaceutico.Id := lServicoFarmaceutico.Id;
+      FServicoFarmaceutico.Data := lServicoFarmaceutico.Data;
+      FServicoFarmaceutico.Observacoes := lServicoFarmaceutico.Observacoes;
+      FServicoFarmaceutico.ValorTotal := lServicoFarmaceutico.ValorTotal;
+
+      FServicoFarmaceutico.Farmaceutico.Id := lServicoFarmaceutico.Farmaceutico.Id;
+      FServicoFarmaceutico.Farmaceutico.Nome := lServicoFarmaceutico.Farmaceutico.Nome;
+
+      FServicoFarmaceutico.Paciente.Id := lServicoFarmaceutico.Paciente.Id;
+      FServicoFarmaceutico.Paciente.Nome := lServicoFarmaceutico.Paciente.Nome;
+
+      for lItemProcedimento in lServicoFarmaceutico.ItensProcedimentos do
+      begin
+        FServicoFarmaceutico.ItensProcedimentos.Add(TServicoFarmaceuticoItem.Create);
+        FServicoFarmaceutico.ItensProcedimentos.Last.Id := lItemProcedimento.Id;
+        FServicoFarmaceutico.ItensProcedimentos.Last.Valor := lItemProcedimento.Valor;
+        FServicoFarmaceutico.ItensProcedimentos.Last.Procedimento.Id := lItemProcedimento.Procedimento.Id;
+        FServicoFarmaceutico.ItensProcedimentos.Last.Procedimento.Tipo := lItemProcedimento.Procedimento.Tipo;
+        FServicoFarmaceutico.ItensProcedimentos.Last.Procedimento.Descricao := lItemProcedimento.Procedimento.Descricao;
+        FServicoFarmaceutico.ItensProcedimentos.Last.Procedimento.Valor := lItemProcedimento.Procedimento.Valor;
+      end;
+
+      dtpData.Date := FServicoFarmaceutico.Data;
+      mObservacoes.Lines.Text := FServicoFarmaceutico.Observacoes;
+
+      for i := 0 to cmbFarmaceutico.Items.Count - 1 do
+        if Integer(cmbFarmaceutico.Items.Objects[i]) = FServicoFarmaceutico.Farmaceutico.Id then
+        begin
+          cmbFarmaceutico.ItemIndex := i;
+          Break;
+        end;
+
+      for i := 0 to cmbPaciente.Items.Count - 1 do
+        if Integer(cmbPaciente.Items.Objects[i]) = FServicoFarmaceutico.Paciente.Id then
+        begin
+          cmbPaciente.ItemIndex := i;
+          Break;
+        end;
+
+      AtualizarGrid;
+      AtualizarValorTotal;
+
+      lblTitulo.Caption := Format('Edição do Serviço Farmacêutico - #%d', [FServicoFarmaceutico.Id]);
+      ShowModal;
+    finally
+      lServicoFarmaceutico.Free;
+    end;
+  end
+  else
+    ShowMessage('Serviço farmaceutico não encontrado!');
+end;
+
+procedure TfCadastroServicoFarmaceutico.PreparaMemtable;
+begin
+  FLstProcedimentos := TFDMemTable.Create(Self);
+  with FLstProcedimentos, FieldDefs do
+  begin
+    Add('Id', ftLargeint);
+    Add('Procedimento_Id', ftLargeint);
+    Add('Tipo', ftString, 50);
+    Add('Descricao', ftString, 200);
+    Add('Valor', ftCurrency);
+  end;
+  FLstProcedimentos.CreateDataSet;
+  FLstProcedimentos.FieldByName('Id').Visible := False;
+  dsProcedimentos.DataSet := FLstProcedimentos;
+end;
+
+procedure TfCadastroServicoFarmaceutico.cmbProcedimentoSelect(
+  Sender: TObject);
+var
+  lProcedimentoSelecionado: TProcedimento;
+begin
+  if cmbProcedimento.ItemIndex >= 0 then
+  begin
+    lProcedimentoSelecionado := TProcedimento(cmbProcedimento.Items.Objects[cmbProcedimento.ItemIndex]);
+
+     edtValor.Text := FormatFloat('###,##0.00', lProcedimentoSelecionado.Valor);
+  end;
+end;
+
+procedure TfCadastroServicoFarmaceutico.AtualizarGrid;
+var
+  i: Integer;
+begin
+  FLstProcedimentos.EmptyDataSet;
+  for i := 0 to FServicoFarmaceutico.ItensProcedimentos.Count - 1 do
+  begin
+    FLstProcedimentos.Append;
+    FLstProcedimentos.FieldByName('Id').AsLargeInt := FServicoFarmaceutico.ItensProcedimentos[i].Id;
+    FLstProcedimentos.FieldByName('Procedimento_Id').AsLargeInt := FServicoFarmaceutico.ItensProcedimentos[i].Procedimento.Id;
+    FLstProcedimentos.FieldByName('Tipo').AsString := TipoProcedimentoToStr(FServicoFarmaceutico.ItensProcedimentos[i].Procedimento.Tipo);
+    FLstProcedimentos.FieldByName('Descricao').AsString := FServicoFarmaceutico.ItensProcedimentos[i].Procedimento.Descricao;
+    FLstProcedimentos.FieldByName('Valor').AsCurrency := FServicoFarmaceutico.ItensProcedimentos[i].Valor;
+    FLstProcedimentos.Post;
+  end;
+end;
+
+procedure TfCadastroServicoFarmaceutico.AtualizarValorTotal;
+var
+  i: Integer;
+  lTotal: Currency;
+begin
+  lTotal := 0;
+
+  for i := 0 to FServicoFarmaceutico.ItensProcedimentos.Count - 1 do
+    lTotal := lTotal + FServicoFarmaceutico.ItensProcedimentos[i].Valor;
+
+  FServicoFarmaceutico.ValorTotal := lTotal;
+  edtValorTotal.Text := FormatFloat('#,##0.00', lTotal);
+end;
+
+procedure TfCadastroServicoFarmaceutico.btAlterarClick(Sender: TObject);
+var i:Integer;
+begin
+  FEditandoItem := True;
+  for i := 0 to cmbProcedimento.Items.Count-1 do
+    if TProcedimento(cmbProcedimento.Items.Objects[i]).Id = FLstProcedimentos.FieldByName('Procedimento_Id').AsLargeInt then
+      cmbProcedimento.ItemIndex := i;
+
+  edtValor.Text := FormatFloat('#,##0.00', FLstProcedimentos.FieldByName('valor').AsCurrency);
+end;
+
+procedure TfCadastroServicoFarmaceutico.btExcluirClick(Sender: TObject);
+begin
+  if FProcedimentoSelecionado >= 0 then
+  begin
+    FServicoFarmaceutico.ItensProcedimentos.Delete(FProcedimentoSelecionado);
+    FProcedimentoSelecionado := -1;
+    LimparCamposProcedimento;
+    AtualizarGrid;
+    AtualizarValorTotal;
+  end
+  else
+    ShowMessage('Selecione um procedimento para remover.');
+end;
+
+procedure TfCadastroServicoFarmaceutico.btnAdicionarProcedimentoClick(Sender: TObject);
+var
+  lProcedimento: TServicoFarmaceuticoItem;
+  lProcedimentoSelecionado: TProcedimento;
+  lValor: Currency;
+begin
+  if (cmbProcedimento.ItemIndex < 0) or (not TryStrToCurr(edtValor.Text, lValor)) then
+  begin
+    ShowMessage('Preencha todos os campos do procedimento corretamente!');
+    Exit;
+  end;
+
+  lProcedimentoSelecionado := TProcedimento(cmbProcedimento.Items.Objects[cmbProcedimento.ItemIndex]);
+
+  if (FEditandoItem) and (FProcedimentoSelecionado >= 0) then
+  begin
+    FServicoFarmaceutico.ItensProcedimentos[FProcedimentoSelecionado].Procedimento.Id := lProcedimentoSelecionado.Id;
+    FServicoFarmaceutico.ItensProcedimentos[FProcedimentoSelecionado].Procedimento.Tipo := lProcedimentoSelecionado.Tipo;
+    FServicoFarmaceutico.ItensProcedimentos[FProcedimentoSelecionado].Procedimento.Descricao := lProcedimentoSelecionado.Descricao;
+    FServicoFarmaceutico.ItensProcedimentos[FProcedimentoSelecionado].Valor := lValor;
+    FProcedimentoSelecionado := -1;
+  end
+  else
+  begin
+    lProcedimento := TServicoFarmaceuticoItem.Create;
+    lProcedimento.Procedimento.Id := lProcedimentoSelecionado.Id;
+    lProcedimento.Procedimento.Tipo := lProcedimentoSelecionado.Tipo;
+    lProcedimento.Procedimento.Descricao := lProcedimentoSelecionado.Descricao;
+    lProcedimento.Valor := lValor;
+    FServicoFarmaceutico.ItensProcedimentos.Add(lProcedimento);
+  end;
+
+  LimparCamposProcedimento;
+  AtualizarGrid;
+  AtualizarValorTotal;
+  FEditandoItem := False;
+end;
+
+procedure TfCadastroServicoFarmaceutico.btnRemoverProcedimentoClick(Sender: TObject);
+begin
+  if FProcedimentoSelecionado >= 0 then
+  begin
+    FServicoFarmaceutico.ItensProcedimentos.Delete(FProcedimentoSelecionado);
+    FProcedimentoSelecionado := -1;
+    LimparCamposProcedimento;
+    AtualizarGrid;
+    AtualizarValorTotal;
+  end
+  else
+    ShowMessage('Selecione um procedimento para remover.');
+end;
+
+procedure TfCadastroServicoFarmaceutico.grdProcedimentosCellClick(
+  Column: TColumn);
+begin
+  if not FLstProcedimentos.IsEmpty then
+    FProcedimentoSelecionado := FLstProcedimentos.RecNo - 1;
+end;
+
+procedure TfCadastroServicoFarmaceutico.edtValorExit(Sender: TObject);
+var
+  Valor: Currency;
+begin
+  if TryStrToCurr(edtValor.Text, Valor) then
+    edtValor.Text := FormatFloat('#,##0.00', Valor);
+end;
+
+procedure TfCadastroServicoFarmaceutico.LimparCamposProcedimento;
+begin
+  cmbProcedimento.ItemIndex := 0;
+  edtValor.Clear;
+  FProcedimentoSelecionado := -1;
+end;
+
+procedure TfCadastroServicoFarmaceutico.PopulaObjeto;
+begin
+  FServicoFarmaceutico.Data := dtpData.Date;
+  FServicoFarmaceutico.Observacoes := mObservacoes.Lines.Text;
+
+  if cmbFarmaceutico.ItemIndex >= 0 then
+    FServicoFarmaceutico.Farmaceutico.Id := Integer(cmbFarmaceutico.Items.Objects[cmbFarmaceutico.ItemIndex]);
+
+  if cmbPaciente.ItemIndex >= 0 then
+    FServicoFarmaceutico.Paciente.Id := Integer(cmbPaciente.Items.Objects[cmbPaciente.ItemIndex]);
+end;
+
+function TfCadastroServicoFarmaceutico.ValidaCadastro: Boolean;
+begin
+  if cmbFarmaceutico.ItemIndex < 1 then
+  begin
+    ShowMessage('Selecione um farmacêutico!');
+    cmbFarmaceutico.SetFocus;
+    Exit(False);
+  end;
+
+  if cmbPaciente.ItemIndex < 1 then
+  begin
+    ShowMessage('Selecione um paciente!');
+    cmbPaciente.SetFocus;
+    Exit(False);
+  end;
+
+  if FServicoFarmaceutico.ItensProcedimentos.Count = 0 then
+  begin
+    ShowMessage('Adicione pelo menos um procedimento!');
+    cmbProcedimento.SetFocus;
+    Exit(False);
+  end;
+
+  Result := True;
+end;
+
+procedure TfCadastroServicoFarmaceutico.btnSalvarClick(Sender: TObject);
+var
+  lSucesso: Boolean;
+begin
+  try
+    if not ValidaCadastro then
+      Exit;
+
+    PopulaObjeto;
+
+    lSucesso := FServicoFarmaceuticoController.Salvar(FServicoFarmaceutico);
+
+    if lSucesso then
+    begin
+      ShowMessage('Serviço farmaceutico salvo com sucesso!');
+      ModalResult := mrOk;
+    end
+    else
+      ShowMessage('Erro ao salvar serviço farmaceutico.' + #13 + FServicoFarmaceutico.Aviso);
+  except
+    on E: Exception do
+      ShowMessage('Erro ao salvar: ' + E.Message);
+  end;
+end;
+
+procedure TfCadastroServicoFarmaceutico.btnCancelarClick(Sender: TObject);
+begin
+  if MessageDlg('Deseja realmente cancelar?', mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+    ModalResult := mrCancel;
+end;
+
+end.

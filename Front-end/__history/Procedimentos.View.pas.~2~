@@ -1,0 +1,120 @@
+unit Procedimentos.View;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, Vcl.Controls, Vcl.Forms, Vcl.StdCtrls,
+  Vcl.ExtCtrls, Data.DB, FireDAC.Comp.Client, FireDAC.Comp.DataSet, FireDAC.Stan.Intf,
+  FireDAC.Stan.Option, FireDAC.Stan.Param, FireDAC.Stan.Error, FireDAC.DatS,
+  FireDAC.Phys.Intf, FireDAC.DApt.Intf, FireDAC.Stan.StorageBin, Vcl.Grids, Vcl.DBGrids,
+  Vcl.Dialogs;
+
+type
+  TfProcedimento = class(TForm)
+    pnlTopo: TPanel;
+    lblDescricao: TLabel;
+    edtDescricao: TEdit;
+    lblValor: TLabel;
+    edtValor: TEdit;
+    btnNovo: TButton;
+    btnSalvar: TButton;
+    btnExcluir: TButton;
+    grdProcedimentos: TDBGrid;
+    dsProcedimentos: TDataSource;
+    mtProcedimentos: TFDMemTable;
+    mtProcedimentosID: TIntegerField;
+    mtProcedimentosDescricao: TStringField;
+    mtProcedimentosValor: TCurrencyField;
+    procedure FormCreate(Sender: TObject);
+    procedure btnNovoClick(Sender: TObject);
+    procedure btnSalvarClick(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+    procedure grdProcedimentosCellClick(Column: TColumn);
+  private
+    procedure LimparCampos;
+    function ProximoID: Integer;
+  public
+    { Public declarations }
+  end;
+
+var
+  fProcedimento: TfProcedimento;
+
+implementation
+
+{$R *.dfm}
+
+procedure TfProcedimento.FormCreate(Sender: TObject);
+begin
+  mtProcedimentos.CreateDataSet;
+  LimparCampos;
+end;
+
+procedure TfProcedimento.btnNovoClick(Sender: TObject);
+begin
+  LimparCampos;
+  edtDescricao.SetFocus;
+end;
+
+procedure TfProcedimento.btnSalvarClick(Sender: TObject);
+begin
+  if Trim(edtDescricao.Text) = '' then
+  begin
+    ShowMessage('Informe a descrição.');
+    Exit;
+  end;
+
+  if mtProcedimentos.Locate('ID', StrToIntDef(edtDescricao.Tag.ToString, -1), []) then
+  begin
+    mtProcedimentos.Edit;
+  end
+  else
+  begin
+    mtProcedimentos.Append;
+    mtProcedimentosID.AsInteger := ProximoID;
+  end;
+
+  mtProcedimentosDescricao.AsString := edtDescricao.Text;
+  mtProcedimentosValor.AsCurrency := StrToCurrDef(edtValor.Text, 0);
+
+  mtProcedimentos.Post;
+  LimparCampos;
+end;
+
+procedure TfProcedimento.btnExcluirClick(Sender: TObject);
+begin
+  if not mtProcedimentos.IsEmpty then
+  begin
+    if MessageDlg('Deseja realmente excluir este procedimento?', mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+      mtProcedimentos.Delete;
+  end;
+end;
+
+procedure TfProcedimento.grdProcedimentosCellClick(Column: TColumn);
+begin
+  if not mtProcedimentos.IsEmpty then
+  begin
+    edtDescricao.Text := mtProcedimentosDescricao.AsString;
+    edtValor.Text := CurrToStr(mtProcedimentosValor.AsCurrency);
+    edtDescricao.Tag := mtProcedimentosID.AsInteger;
+  end;
+end;
+
+procedure TfProcedimento.LimparCampos;
+begin
+  edtDescricao.Clear;
+  edtValor.Text := '0,00';
+  edtDescricao.Tag := -1;
+end;
+
+function TfProcedimento.ProximoID: Integer;
+begin
+  mtProcedimentos.Last;
+  if mtProcedimentos.RecordCount = 0 then
+    Result := 1
+  else
+    Result := mtProcedimentosID.AsInteger + 1;
+end;
+
+end.
+

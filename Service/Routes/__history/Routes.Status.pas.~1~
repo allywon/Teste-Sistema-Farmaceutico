@@ -1,0 +1,65 @@
+unit Routes.Status;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, Routes.Interfaces, ModelDB;
+
+type
+  TStatusRoute = class(TRouteBase)
+  private
+    procedure RotaStatus(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+  public
+    procedure RegistrarRotas; override;
+    function ProcessarRota(const Path: string; const Verb: THTTPVerb;
+      ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean; override;
+  end;
+
+implementation
+
+{ TStatusRoute }
+
+procedure TStatusRoute.RegistrarRotas;
+begin
+  WriteLn('GET    /api/status');
+end;
+
+function TStatusRoute.ProcessarRota(const Path: string; const Verb: THTTPVerb;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo): Boolean;
+begin
+  Result := False;
+
+  if Path = '/api/status' then
+  begin
+    if Verb = hvGET then
+    begin
+      RotaStatus(ARequestInfo, AResponseInfo);
+      Result := True;
+    end
+    else
+    begin
+      AResponseInfo.ResponseNo := 405;
+      Result := True;
+    end;
+  end;
+end;
+
+procedure TStatusRoute.RotaStatus(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  lObj: TJSONObject;
+begin
+  lObj := TJSONObject.Create;
+  try
+    lObj.AddPair('status', 'online');
+    lObj.AddPair('version', '1.0.0');
+    lObj.AddPair('database', BoolToStr(DBModel.FDConnection.Connected, True));
+    lObj.AddPair('timestamp', FormatDateTime('yyyy-mm-dd hh:nn:ss', Now));
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := lObj.ToJSON;
+  finally
+    lObj.Free;
+  end;
+end;
+
+end.

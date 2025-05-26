@@ -1,0 +1,68 @@
+unit Cadastro.Pessoa;
+
+interface
+
+uses
+  System.SysUtils;
+
+type
+  TPessoaBase = class
+  private
+    FNome: string;
+    FCPF: string;
+    FDataNascimento: TDate;
+  public
+    property Nome: string read FNome write FNome;
+    property CPF: string read FCPF write FCPF;
+    property DataNascimento: TDate read FDataNascimento write FDataNascimento;
+
+    procedure Limpar; virtual;
+
+  end;
+
+  TPaciente = class(TPessoaBase)
+  private
+  public
+    procedure Limpar; override;
+  end;
+
+  TFarmaceutico = class(TPessoaBase)
+  private
+    FCRF: string;
+    FEspecializacao: string;
+  public
+    property CRF: string read FCRF write FCRF;
+    property Especializacao: string read FEspecializacao write FEspecializacao;
+
+    procedure Limpar; override;
+  end;
+
+implementation
+
+
+procedure TPessoaBase.Limpar;
+begin
+  FNome := '';
+  FCPF := '';
+  FDataNascimento := 0;
+end;
+
+{ TFarmaceutico }
+
+procedure TFarmaceutico.Limpar;
+begin
+   inherited;
+   FCRF := '';
+   FEspecializacao := '';
+end;
+
+{ TPaciente }
+
+procedure TPaciente.Limpar;
+begin
+  inherited;
+
+end;
+
+end.
+

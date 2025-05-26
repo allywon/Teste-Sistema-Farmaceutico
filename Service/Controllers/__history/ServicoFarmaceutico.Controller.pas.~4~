@@ -1,0 +1,243 @@
+unit ServicoFarmaceutico.Controller;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.JSON, FireDAC.Comp.Client,
+  Data.DB, ModelDB, Model.Pessoa, Model.Procedimento, Model.ServicoFarmaceutico,
+  ServicoFarmaceutico.Mapper, ServicoFarmaceutico.Dao, System.Generics.Collections;
+
+type
+  TServicoFarmaceuticoController = class
+  private
+    FModelDB: TModelDB;
+    FMapper: TServicoFarmaceuticoMapper;
+    FServicoFarmaceuticoDAO: TServicoFarmaceuticoDAO;
+  public
+    constructor Create(AModelDB: TModelDB);
+    destructor Destroy; override;
+    function ObterServicos: TJSONArray;
+    function ObterServicoPorId(const Id: Int64): TJSONObject;
+    function ObterServicosPorPaciente(const PacienteId: Int64): TJSONArray;
+    function ObterServicosPorFarmaceutico(const FarmaceuticoId: Int64): TJSONArray;
+    function ObterServicosPorPeriodo(const DataInicio, DataFim: TDateTime): TJSONArray;
+    function InserirServico(AServico: TServicoFarmaceutico): Boolean;
+    function AtualizarServico(AServico: TServicoFarmaceutico): Boolean;
+    function ExcluirServico(const Id: Int64): Boolean;
+    function CarregarServico(const Id: Int64; Servico: TServicoFarmaceutico): Boolean;
+  end;
+
+implementation
+
+{ TServicoFarmaceuticoController }
+
+constructor TServicoFarmaceuticoController.Create(AModelDB: TModelDB);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+  FMapper := TServicoFarmaceuticoMapper.Create;
+  FServicoFarmaceuticoDAO := TServicoFarmaceuticoDAO.Create(AModelDB);
+end;
+
+destructor TServicoFarmaceuticoController.Destroy;
+begin
+  FMapper.Free;
+  FServicoFarmaceuticoDAO.Free;
+  inherited;
+end;
+
+function TServicoFarmaceuticoController.ObterServicos: TJSONArray;
+var
+  Lista: TObjectList<TServicoFarmaceutico>;
+  Servico: TServicoFarmaceutico;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FServicoFarmaceuticoDAO.ObterTodos;
+    try
+      for Servico in Lista do
+        Result.AddElement(FMapper.ParaJSON(Servico));
+    finally
+      Lista.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter serviços farmacêuticos: ' + E.Message);
+    end;
+  end;
+end;
+
+function TServicoFarmaceuticoController.ObterServicoPorId(const Id: Int64): TJSONObject;
+var
+  Servico: TServicoFarmaceutico;
+  Lista: TObjectList<TServicoFarmaceutico>;
+  i: Integer;
+begin
+  Result := nil;
+  Lista := FServicoFarmaceuticoDAO.ObterTodos;
+  try
+    for i := 0 to Lista.Count - 1 do
+    begin
+      if Lista[i].Id = Id then
+      begin
+        Result := FMapper.ParaJSON(Lista[i]);
+        Break;
+      end;
+    end;
+
+    if not Assigned(Result) then
+      Result := TJSONObject.Create;
+  finally
+    Lista.Free;
+  end;
+end;
+
+function TServicoFarmaceuticoController.ObterServicosPorPaciente(const PacienteId: Int64): TJSONArray;
+var
+  Lista: TObjectList<TServicoFarmaceutico>;
+  Servico: TServicoFarmaceutico;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FServicoFarmaceuticoDAO.ObterTodos;
+    try
+      for Servico in Lista do
+      begin
+        if Servico.Paciente.Id = PacienteId then
+          Result.AddElement(FMapper.ParaJSON(Servico));
+      end;
+    finally
+      Lista.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter serviços por paciente: ' + E.Message);
+    end;
+  end;
+end;
+
+function TServicoFarmaceuticoController.ObterServicosPorFarmaceutico(const FarmaceuticoId: Int64): TJSONArray;
+var
+  Lista: TObjectList<TServicoFarmaceutico>;
+  Servico: TServicoFarmaceutico;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FServicoFarmaceuticoDAO.ObterTodos;
+    try
+      for Servico in Lista do
+      begin
+        if Servico.Farmaceutico.Id = FarmaceuticoId then
+          Result.AddElement(FMapper.ParaJSON(Servico));
+      end;
+    finally
+      Lista.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter serviços por farmacêutico: ' + E.Message);
+    end;
+  end;
+end;
+
+function TServicoFarmaceuticoController.ObterServicosPorPeriodo(const DataInicio, DataFim: TDateTime): TJSONArray;
+var
+  Lista: TObjectList<TServicoFarmaceutico>;
+  Servico: TServicoFarmaceutico;
+begin
+  Result := TJSONArray.Create;
+  try
+    Lista := FServicoFarmaceuticoDAO.ObterTodos;
+    try
+      for Servico in Lista do
+      begin
+        if (Servico.Data >= DataInicio) and (Servico.Data <= DataFim) then
+          Result.AddElement(FMapper.ParaJSON(Servico));
+      end;
+    finally
+      Lista.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter serviços por período: ' + E.Message);
+    end;
+  end;
+end;
+
+function TServicoFarmaceuticoController.InserirServico(AServico: TServicoFarmaceutico): Boolean;
+begin
+  Result := FServicoFarmaceuticoDAO.Inserir(AServico);
+end;
+
+function TServicoFarmaceuticoController.AtualizarServico(AServico: TServicoFarmaceutico): Boolean;
+begin
+  Result := FServicoFarmaceuticoDAO.Atualizar(AServico);
+end;
+
+function TServicoFarmaceuticoController.ExcluirServico(const Id: Int64): Boolean;
+begin
+  Result := FServicoFarmaceuticoDAO.Excluir(Id);
+end;
+
+function TServicoFarmaceuticoController.CarregarServico(const Id: Int64; Servico: TServicoFarmaceutico): Boolean;
+var
+  Lista: TObjectList<TServicoFarmaceutico>;
+  i: Integer;
+  encontrado: Boolean;
+  lNovoItemProcedimento, lItemProcedimento: TServicoFarmaceuticoItem;
+begin
+  Result := False;
+  encontrado := False;
+
+  Lista := FServicoFarmaceuticoDAO.ObterTodos;
+  try
+    for i := 0 to Lista.Count - 1 do
+    begin
+      if Lista[i].Id = Id then
+      begin
+        // Copia os dados do serviço encontrado para o objeto passado como parâmetro
+        Servico.Id := Lista[i].Id;
+        Servico.Data := Lista[i].Data;
+        Servico.Observacoes := Lista[i].Observacoes;
+        Servico.ValorTotal := Lista[i].ValorTotal;
+
+        // Copia dados do farmacêutico
+        Servico.Farmaceutico.Id := Lista[i].Farmaceutico.Id;
+        Servico.Farmaceutico.Nome := Lista[i].Farmaceutico.Nome;
+
+        // Copia dados do paciente
+        Servico.Paciente.Id := Lista[i].Paciente.Id;
+        Servico.Paciente.Nome := Lista[i].Paciente.Nome;
+
+        // Limpa procedimentos existentes e copia novos
+        Servico.ItensProcedimentos.Clear;
+        for lItemProcedimento in Lista[i].ItensProcedimentos do
+        begin
+          lNovoItemProcedimento := TServicoFarmaceuticoItem.Create;
+          lNovoItemProcedimento.Id := lItemProcedimento.Id;
+          lNovoItemProcedimento.Procedimento.Id := lItemProcedimento.Procedimento.Id;
+          lNovoItemProcedimento.Procedimento.Descricao := lItemProcedimento.Procedimento.Descricao;
+          lNovoItemProcedimento.Procedimento.Tipo := lItemProcedimento.Procedimento.Tipo;
+          lNovoItemProcedimento.Valor := lItemProcedimento.Valor;
+          Servico.ItensProcedimentos.Add(lNovoItemProcedimento);
+        end;
+
+        encontrado := True;
+        Result := True;
+        Break;
+      end;
+    end;
+  finally
+    Lista.Free;
+  end;
+end;
+
+end.

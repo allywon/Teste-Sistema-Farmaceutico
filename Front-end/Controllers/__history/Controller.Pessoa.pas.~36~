@@ -1,0 +1,161 @@
+unit Controller.Pessoa;
+
+interface
+
+uses
+  System.SysUtils, System.JSON, System.Generics.Collections,
+  Service.RESTBase, Model.Pessoa;
+
+type
+  TPessoaTipo = (ptPaciente, ptFarmaceutico);
+
+  TPessoaController = class(TRESTServiceBase)
+  public
+    function BuscarTodos(ATipo: TPessoaTipo): TObjectList<TPessoaBase>;
+    function BuscarPorId(ATipo: TPessoaTipo; const AId: Integer): TPessoaBase;
+    function Salvar(APessoa: TPessoaBase; ATipo: TPessoaTipo): Boolean;
+    function Excluir(AId: Integer; ATipo: TPessoaTipo): Boolean;
+  end;
+
+implementation
+
+uses
+  REST.Types, DateUtils, Farmaceutico.Mapper, Paciente.Mapper;
+
+function GetResourceName(Tipo: TPessoaTipo): string;
+begin
+  case Tipo of
+    ptPaciente: Result := 'pacientes';
+    ptFarmaceutico: Result := 'farmaceuticos';
+  end;
+end;
+
+function TPessoaController.BuscarTodos(ATipo: TPessoaTipo): TObjectList<TPessoaBase>;
+var
+  lJSONArray: TJSONArray;
+  lJSONItem: TJSONValue;
+  lJSONObject: TJSONObject;
+  lPessoa: TPessoaBase;
+  lResponseContent: string;
+begin
+  Result := TObjectList<TPessoaBase>.Create(True);
+  try
+    lResponseContent := ExecutarRequisicao(rmGET, GetResourceName(ATipo), EmptyStr);
+
+    if FRESTResponse.StatusCode = 200 then
+    begin
+      lJSONArray := TJSONObject.ParseJSONValue(lResponseContent) as TJSONArray;
+      try
+        for lJSONItem in lJSONArray do
+        begin
+          lJSONObject := lJSONItem as TJSONObject;
+
+          case ATipo of
+            ptPaciente:
+              lPessoa := TPacienteMapper.Create.DeJSON(lJSONObject);
+            ptFarmaceutico:
+              lPessoa := TFarmaceuticoMapper.Create.DeJSON(lJSONObject);
+          end;
+
+          Result.Add(lPessoa);
+        end;
+      finally
+        lJSONArray.Free;
+      end;
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+function TPessoaController.BuscarPorId(ATipo: TPessoaTipo; const AId: Integer): TPessoaBase;
+var
+  lResource: string;
+  lResponseContent: string;
+  lJSONObject: TJSONObject;
+begin
+  Result := nil;
+
+  lResource := Format('%s/%d', [GetResourceName(ATipo), AId]);
+
+  lResponseContent := ExecutarRequisicao(rmGET, lResource, EmptyStr);
+
+  if FRESTResponse.StatusCode = 200 then
+  begin
+    lJSONObject := TJSONObject.ParseJSONValue(lResponseContent) as TJSONObject;
+    try
+      case ATipo of
+        ptPaciente:
+          begin
+            Result := TPacienteMapper.Create.DeJSON(lJSONObject);
+          end;
+
+        ptFarmaceutico:
+          begin
+            Result := TFarmaceuticoMapper.Create.DeJSON(lJSONObject);
+          end;
+      end;
+    finally
+      lJSONObject.Free;
+    end;
+  end;
+end;
+
+function TPessoaController.Salvar(APessoa: TPessoaBase; ATipo: TPessoaTipo): Boolean;
+var
+  lJSONObject: TJSONObject;
+  lResource: string;
+  lMetodo: TRESTRequestMethod;
+  lResponseContent: string;
+begin
+  case ATipo of
+    ptPaciente:
+      lJSONObject := TPacienteMapper.Create.ParaJSON(TPaciente(APessoa));
+    ptFarmaceutico:
+      lJSONObject := TFarmaceuticoMapper.Create.ParaJSON(TFarmaceutico(APessoa));
+  else
+    raise Exception.Create('Tipo de pessoa não suportado.');
+  end;
+
+  try
+    if APessoa.Id = 0 then
+    begin
+      lMetodo := rmPOST;
+      lResource := GetResourceName(ATipo);
+    end
+    else
+    begin
+      lMetodo := rmPUT;
+      lResource := Format('%s/%d', [GetResourceName(ATipo), APessoa.Id]);
+    end;
+
+    try
+      lResponseContent := ExecutarRequisicao(lMetodo, lResource, lJSONObject.ToJSON);
+      Result := (FRESTResponse.StatusCode in [200, 201]);
+    except
+      on E: Exception do
+      begin
+        APessoa.Aviso := FRESTResponse.Content;
+        Result := False;
+      end;
+    end;
+  finally
+    lJSONObject.Free;
+  end;
+end;
+
+function TPessoaController.Excluir(AId: Integer; ATipo: TPessoaTipo): Boolean;
+var
+  lResource: string;
+  lResponseContent: string;
+begin
+  lResource := Format('%s/%d', [GetResourceName(ATipo), AId]);
+
+  lResponseContent := ExecutarRequisicao(rmDELETE, lResource, EmptyStr);
+
+  Result := (FRESTResponse.StatusCode in [200, 204]);
+end;
+
+end.
+

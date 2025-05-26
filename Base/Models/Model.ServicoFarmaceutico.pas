@@ -1,0 +1,120 @@
+unit Model.ServicoFarmaceutico;
+
+interface
+
+uses
+  System.SysUtils, System.Generics.Collections, Model.Pessoa, Model.Procedimento;
+
+type
+  TServicoFarmaceuticoItem = class
+   private
+     FId: Int64;
+     FProcedimento: TProcedimento;
+     FValor: Currency;
+   public
+     constructor Create;
+     destructor Destroy; override;
+
+     procedure Limpar;
+     property Id: Int64 read FId write FId;
+     property Procedimento: TProcedimento read FProcedimento write FProcedimento;
+     property Valor: Currency read FValor write FValor;
+  end;
+
+  TServicoFarmaceutico = class
+  private
+    FId: Int64;
+    FData: TDateTime;
+    FFarmaceutico: TFarmaceutico;
+    FPaciente: TPaciente;
+    FItensProcedimentos: TObjectList<TServicoFarmaceuticoItem>;
+    FObservacoes: string;
+    FValorTotal: Currency;
+    FAviso: String;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Limpar;
+
+    property Id: Int64 read FId write FId;
+    property Data: TDateTime read FData write FData;
+    property Farmaceutico: TFarmaceutico read FFarmaceutico write FFarmaceutico;
+    property Paciente: TPaciente read FPaciente write FPaciente;
+    property ItensProcedimentos: TObjectList<TServicoFarmaceuticoItem> read FItensProcedimentos;
+    property Observacoes: string read FObservacoes write FObservacoes;
+    property ValorTotal: Currency read FValorTotal write FValorTotal;
+    property Aviso: String read FAviso write FAviso;
+
+    procedure CalcularValorTotal;
+  end;
+
+implementation
+
+{ TServicoFarmaceutico }
+
+constructor TServicoFarmaceutico.Create;
+begin
+  inherited;
+  FFarmaceutico := TFarmaceutico.Create;
+  FPaciente := TPaciente.Create;
+  FItensProcedimentos := TObjectList<TServicoFarmaceuticoItem>.Create(True);
+end;
+
+destructor TServicoFarmaceutico.Destroy;
+begin
+  FreeAndNil(FFarmaceutico);
+  FreeAndNil(FPaciente);
+  FreeAndNil(FItensProcedimentos);
+  inherited;
+end;
+
+procedure TServicoFarmaceutico.Limpar;
+begin
+  FId := 0;
+  FData := Date;
+  FObservacoes := EmptyStr;
+  FValorTotal := 0;
+
+  FFarmaceutico.Id := 0;
+  FFarmaceutico.Nome := EmptyStr;
+
+  FPaciente.Id := 0;
+  FPaciente.Nome := EmptyStr;
+
+  FAviso := EmptyStr;
+
+  FItensProcedimentos.Clear;
+end;
+
+procedure TServicoFarmaceutico.CalcularValorTotal;
+var
+  lItemProcedimento: TServicoFarmaceuticoItem;
+begin
+  FValorTotal := 0;
+  for lItemProcedimento in FItensProcedimentos do
+    FValorTotal := FValorTotal + lItemProcedimento.Valor;
+end;
+
+{ TServicoFarmaceuticoItem }
+
+constructor TServicoFarmaceuticoItem.Create;
+begin
+  FProcedimento := TProcedimento.Create;
+end;
+
+destructor TServicoFarmaceuticoItem.Destroy;
+begin
+  FreeAndNil(FProcedimento);
+  inherited;
+end;
+
+procedure TServicoFarmaceuticoItem.Limpar;
+begin
+  FId := 0;
+  FProcedimento.Limpar;
+  FValor := 0;
+end;
+
+end.
+

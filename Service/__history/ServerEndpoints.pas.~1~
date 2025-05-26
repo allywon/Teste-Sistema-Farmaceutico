@@ -1,0 +1,463 @@
+// Arquivo: ServerEndpoints.pas
+unit ServerEndpoints;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, IdHeaderList, System.JSON, ModelDB, IdGlobal, IdCoderMIME,
+  IdURI;
+
+type
+  THTTPVerb = (hvGET, hvPOST, hvPUT, hvDELETE, hvOPTIONS);
+
+  TServerEndpoints = class
+  private
+    FServer: TIdHTTPServer;
+
+    // Métodos para gerenciar requisições
+    procedure OnCommandGet(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+
+    // Tratamento dos endpoints
+    procedure ProcessarRequisicao(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure ConfigurarCORS(AResponseInfo: TIdHTTPResponseInfo);
+
+    // Endpoints específicos
+    procedure GetStatus(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure GetClientes(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure GetClienteById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+    procedure PostCliente(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure PutCliente(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+    procedure DeleteCliente(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+
+    // Funções auxiliares
+    function ExtrairParamPath(const URL: string; Indice: Integer): string;
+    function ObterVerboHTTP(const Method: string): THTTPVerb;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Iniciar(const Porta: Integer = 8080);
+    procedure Parar;
+
+    property Server: TIdHTTPServer read FServer;
+  end;
+
+var
+  ServerEndpoints: TServerEndpoints;
+
+implementation
+
+{ TServerEndpoints }
+
+constructor TServerEndpoints.Create;
+begin
+  FServer := TIdHTTPServer.Create(nil);
+  FServer.OnCommandGet := OnCommandGet;
+  // Também lidará com POST, PUT, DELETE
+  FServer.OnCommandOther := OnCommandGet;
+end;
+
+destructor TServerEndpoints.Destroy;
+begin
+  if Assigned(FServer) then
+  begin
+    if FServer.Active then
+      FServer.Active := False;
+
+    FServer.Free;
+  end;
+
+  inherited;
+end;
+
+procedure TServerEndpoints.Iniciar(const Porta: Integer);
+begin
+  if not Assigned(FServer) then
+    Exit;
+
+  FServer.DefaultPort := Porta;
+  FServer.Active := True;
+
+  WriteLn('Servidor HTTP iniciado na porta ' + IntToStr(Porta));
+  WriteLn('Endpoints disponíveis:');
+  WriteLn('GET    /api/status       - Status do servidor');
+  WriteLn('GET    /api/clientes     - Listar todos os clientes');
+  WriteLn('GET    /api/clientes/:id - Obter cliente por ID');
+  WriteLn('POST   /api/clientes     - Inserir novo cliente');
+  WriteLn('PUT    /api/clientes/:id - Atualizar cliente');
+  WriteLn('DELETE /api/clientes/:id - Excluir cliente');
+end;
+
+procedure TServerEndpoints.Parar;
+begin
+  if Assigned(FServer) and FServer.Active then
+  begin
+    FServer.Active := False;
+    WriteLn('Servidor HTTP encerrado');
+  end;
+end;
+
+function TServerEndpoints.ObterVerboHTTP(const Method: string): THTTPVerb;
+begin
+  if SameText(Method, 'GET') then
+    Result := hvGET
+  else if SameText(Method, 'POST') then
+    Result := hvPOST
+  else if SameText(Method, 'PUT') then
+    Result := hvPUT
+  else if SameText(Method, 'DELETE') then
+    Result := hvDELETE
+  else if SameText(Method, 'OPTIONS') then
+    Result := hvOPTIONS
+  else
+    Result := hvGET; // Default
+end;
+
+function TServerEndpoints.ExtrairParamPath(const URL: string; Indice: Integer): string;
+var
+  Partes: TArray<string>;
+begin
+  Result := '';
+  Partes := URL.Split(['/']);
+
+  // Verificar se o índice solicitado está dentro do intervalo
+  if (Length(Partes) > Indice) and (Indice >= 0) then
+    Result := Partes[Indice];
+end;
+
+procedure TServerEndpoints.ConfigurarCORS(AResponseInfo: TIdHTTPResponseInfo);
+begin
+  // Configurar headers CORS para permitir acesso de diferentes origens
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Origin'] := '*';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Methods'] := 'GET, POST, PUT, DELETE, OPTIONS';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Headers'] := 'Content-Type, Authorization';
+end;
+
+procedure TServerEndpoints.OnCommandGet(AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+begin
+  try
+    // Define o tipo de conteúdo padrão
+    AResponseInfo.ContentType := 'application/json; charset=UTF-8';
+
+    // Configura CORS para todas as requisições
+    ConfigurarCORS(AResponseInfo);
+
+    // Se for pre-flight OPTIONS, responde imediatamente
+    if SameText(ARequestInfo.Command, 'OPTIONS') then
+    begin
+      AResponseInfo.ResponseNo := 200;
+      AResponseInfo.ContentText := '';
+      Exit;
+    end;
+
+    // Processa a requisição de acordo com a rota
+    ProcessarRequisicao(AContext, ARequestInfo, AResponseInfo);
+  except
+    on E: Exception do
+    begin
+      AResponseInfo.ResponseNo := 500;
+      AResponseInfo.ContentType := 'application/json';
+      AResponseInfo.ContentText := Format('{"error": "Erro interno do servidor: %s"}', [E.Message]);
+
+      WriteLn('Erro ao processar requisição: ' + E.Message);
+    end;
+  end;
+end;
+
+procedure TServerEndpoints.ProcessarRequisicao(AContext: TIdContext;
+  ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  Path: string;
+  Verbo: THTTPVerb;
+  IdParam: string;
+begin
+  Path := ARequestInfo.URI;
+  Verbo := ObterVerboHTTP(ARequestInfo.Command);
+
+  // Certifica que estamos conectados ao banco
+  if not DBModel.FDConnection.Connected then
+    DBModel.ConectarBanco;
+
+  // Rota /api/status
+  if Path = '/api/status' then
+  begin
+    if Verbo = hvGET then
+      GetStatus(ARequestInfo, AResponseInfo)
+    else
+      AResponseInfo.ResponseNo := 405; // Method Not Allowed
+  end
+
+  // Rota /api/clientes (sem ID)
+  else if Path = '/api/clientes' then
+  begin
+    case Verbo of
+      hvGET: GetClientes(ARequestInfo, AResponseInfo);
+      hvPOST: PostCliente(ARequestInfo, AResponseInfo);
+      else
+        AResponseInfo.ResponseNo := 405; // Method Not Allowed
+    end;
+  end
+
+  // Rota /api/clientes/:id (com ID)
+  else if Path.StartsWith('/api/clientes/') then
+  begin
+    IdParam := ExtrairParamPath(Path, 3); // Pega o ID (índice 3 após a divisão por '/')
+
+    if IdParam <> '' then
+    begin
+      case Verbo of
+        hvGET: GetClienteById(ARequestInfo, AResponseInfo, IdParam);
+        hvPUT: PutCliente(ARequestInfo, AResponseInfo, IdParam);
+        hvDELETE: DeleteCliente(ARequestInfo, AResponseInfo, IdParam);
+        else
+          AResponseInfo.ResponseNo := 405; // Method Not Allowed
+      end;
+    end else
+    begin
+      AResponseInfo.ResponseNo := 400; // Bad Request
+      AResponseInfo.ContentText := '{"error": "ID não fornecido"}';
+    end;
+  end
+
+  // Rota não encontrada
+  else
+  begin
+    AResponseInfo.ResponseNo := 404; // Not Found
+    AResponseInfo.ContentText := '{"error": "Endpoint não encontrado"}';
+  end;
+end;
+
+procedure TServerEndpoints.GetStatus(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo);
+var
+  Status: TJSONObject;
+begin
+  Status := TJSONObject.Create;
+  try
+    Status.AddPair('status', 'online');
+    Status.AddPair('version', '1.0.0');
+    Status.AddPair('database', BoolToStr(DBModel.FDConnection.Connected, True));
+    Status.AddPair('timestamp', FormatDateTime('yyyy-mm-dd hh:nn:ss', Now));
+
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := Status.ToJSON;
+  finally
+    Status.Free;
+  end;
+end;
+
+procedure TServerEndpoints.GetClientes(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo);
+var
+  JsonArray: TJSONArray;
+begin
+  JsonArray := DBModel.ObterClientes;
+  try
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := JsonArray.ToJSON;
+  finally
+    JsonArray.Free;
+  end;
+end;
+
+procedure TServerEndpoints.GetClienteById(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  ClienteId: Integer;
+  JsonObj: TJSONObject;
+begin
+  ClienteId := StrToIntDef(Id, 0);
+  if ClienteId <= 0 then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "ID inválido"}';
+    Exit;
+  end;
+
+  JsonObj := DBModel.ObterClientePorId(ClienteId);
+  try
+    if JsonObj.Count > 0 then
+    begin
+      AResponseInfo.ResponseNo := 200;
+      AResponseInfo.ContentText := JsonObj.ToJSON;
+    end else
+    begin
+      AResponseInfo.ResponseNo := 404;
+      AResponseInfo.ContentText := '{"error": "Cliente não encontrado"}';
+    end;
+  finally
+    JsonObj.Free;
+  end;
+end;
+
+procedure TServerEndpoints.PostCliente(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo);
+var
+  RequestBody: string;
+  JsonObj: TJSONObject;
+  Nome, Email, Telefone: string;
+  Success: Boolean;
+begin
+  RequestBody := ARequestInfo.FormParams;
+
+  // Se não vier nos form params, tenta no corpo da requisição
+  if RequestBody = '' then
+    RequestBody := ARequestInfo.UnparsedParams;
+
+  // Se ainda estiver vazio, lê do content
+  if RequestBody = '' then
+  begin
+    ARequestInfo.PostStream.Position := 0;
+    RequestBody := ReadStringFromStream(ARequestInfo.PostStream, -1, IndyTextEncoding_UTF8);
+  end;
+
+  if RequestBody = '' then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "Corpo da requisição vazio"}';
+    Exit;
+  end;
+
+  JsonObj := TJSONObject.ParseJSONValue(RequestBody) as TJSONObject;
+  try
+    if not Assigned(JsonObj) then
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "JSON inválido"}';
+      Exit;
+    end;
+
+    Nome := '';
+    Email := '';
+    Telefone := '';
+
+    if JsonObj.TryGetValue<string>('nome', Nome) and
+       JsonObj.TryGetValue<string>('email', Email) and
+       JsonObj.TryGetValue<string>('telefone', Telefone) then
+    begin
+      Success := DBModel.InserirCliente(Nome, Email, Telefone);
+
+      if Success then
+      begin
+        AResponseInfo.ResponseNo := 201;
+        AResponseInfo.ContentText := '{"message": "Cliente inserido com sucesso"}';
+      end else
+      begin
+        AResponseInfo.ResponseNo := 500;
+        AResponseInfo.ContentText := '{"error": "Erro ao inserir cliente"}';
+      end;
+    end else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "Dados incompletos ou inválidos"}';
+    end;
+  finally
+    JsonObj.Free;
+  end;
+end;
+
+procedure TServerEndpoints.PutCliente(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  ClienteId: Integer;
+  RequestBody: string;
+  JsonObj: TJSONObject;
+  Nome, Email, Telefone: string;
+  Success: Boolean;
+begin
+  ClienteId := StrToIntDef(Id, 0);
+  if ClienteId <= 0 then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "ID inválido"}';
+    Exit;
+  end;
+
+  RequestBody := ARequestInfo.FormParams;
+
+  // Se não vier nos form params, tenta no corpo da requisição
+  if RequestBody = '' then
+    RequestBody := ARequestInfo.UnparsedParams;
+
+  // Se ainda estiver vazio, lê do content
+  if RequestBody = '' then
+  begin
+    ARequestInfo.PostStream.Position := 0;
+    RequestBody := ReadStringFromStream(ARequestInfo.PostStream, -1, IndyTextEncoding_UTF8);
+  end;
+
+  if RequestBody = '' then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "Corpo da requisição vazio"}';
+    Exit;
+  end;
+
+  JsonObj := TJSONObject.ParseJSONValue(RequestBody) as TJSONObject;
+  try
+    if not Assigned(JsonObj) then
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "JSON inválido"}';
+      Exit;
+    end;
+
+    Nome := '';
+    Email := '';
+    Telefone := '';
+
+    if JsonObj.TryGetValue<string>('nome', Nome) and
+       JsonObj.TryGetValue<string>('email', Email) and
+       JsonObj.TryGetValue<string>('telefone', Telefone) then
+    begin
+      Success := DBModel.AtualizarCliente(ClienteId, Nome, Email, Telefone);
+
+      if Success then
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := '{"message": "Cliente atualizado com sucesso"}';
+      end else
+      begin
+        AResponseInfo.ResponseNo := 500;
+        AResponseInfo.ContentText := '{"error": "Erro ao atualizar cliente"}';
+      end;
+    end else
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := '{"error": "Dados incompletos ou inválidos"}';
+    end;
+  finally
+    JsonObj.Free;
+  end;
+end;
+
+procedure TServerEndpoints.DeleteCliente(ARequestInfo: TIdHTTPRequestInfo;
+  AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  ClienteId: Integer;
+  Success: Boolean;
+begin
+  ClienteId := StrToIntDef(Id, 0);
+  if ClienteId <= 0 then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "ID inválido"}';
+    Exit;
+  end;
+
+  Success := DBModel.ExcluirCliente(ClienteId);
+
+  if Success then
+  begin
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := '{"message": "Cliente excluído com sucesso"}';
+  end else
+  begin
+    AResponseInfo.ResponseNo := 500;
+    AResponseInfo.ContentText := '{"error": "Erro ao excluir cliente"}';
+  end;
+end;
+
+end.

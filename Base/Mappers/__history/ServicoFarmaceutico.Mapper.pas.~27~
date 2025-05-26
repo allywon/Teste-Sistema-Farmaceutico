@@ -1,0 +1,297 @@
+unit ServicoFarmaceutico.Mapper;
+
+interface
+
+uses
+  System.JSON, Model.ServicoFarmaceutico;
+
+type
+  TServicoFarmaceuticoMapper = class
+  public
+    function ParaJSON(const AServicoFarmaceutico: TServicoFarmaceutico): TJSONObject;
+    function DeJSON(const AJSONObject: TJSONObject; const AServicoId: Int64 = 0): TServicoFarmaceutico;
+//    function DeJSONCompleto(const AJSONObject: TJSONObject): TServicoFarmaceutico;
+  end;
+
+implementation
+
+uses
+  System.DateUtils, System.SysUtils, Paciente.Mapper, Procedimento.Mapper,
+  Farmaceutico.Mapper, Model.Pessoa, Model.Procedimento, Model.Procedimento.Tipo;
+//  ModelDB, Procedimento.Dao, Paciente.Dao, Farmaceutico.Dao;
+
+{ TServicoFarmaceuticoMapper }
+
+//function TServicoFarmaceuticoMapper.DeJSONCompleto(
+//  const AJSONObject: TJSONObject): TServicoFarmaceutico;
+//var
+//  FarmaceuticoJSON, PacienteJSON: TJSONValue;
+//  ProcedimentosArray: TJSONArray;
+//  ProcedimentoItem: TJSONValue;
+//  ProcedimentoJSON: TJSONObject;
+//  ItemProcedimento: TServicoFarmaceuticoItem;
+//  DataStr: string;
+//begin
+//  Result := TServicoFarmaceutico.Create;
+//  try
+//    Result.Id := AJSONObject.GetValue<Int64>('id', 0);
+//
+//    DataStr := AJSONObject.GetValue<string>('data', '');
+//    if DataStr <> '' then
+//      Result.Data := ISO8601ToDate(DataStr);
+//
+//    Result.Observacoes := AJSONObject.GetValue<string>('observacoes', '');
+//    Result.ValorTotal := AJSONObject.GetValue<Currency>('valorTotal', 0);
+//
+//    if AJSONObject.TryGetValue('farmaceutico', FarmaceuticoJSON) and
+//       (FarmaceuticoJSON is TJSONObject) then
+//    begin
+//      Result.Farmaceutico.Id := (FarmaceuticoJSON as TJSONObject).GetValue<Int64>('id', 0);
+//      Result.Farmaceutico.Nome := (FarmaceuticoJSON as TJSONObject).GetValue<string>('nome', '');
+//    end;
+//
+//    if AJSONObject.TryGetValue('paciente', PacienteJSON) and
+//       (PacienteJSON is TJSONObject) then
+//    begin
+//      Result.Paciente.Id := (PacienteJSON as TJSONObject).GetValue<Int64>('id', 0);
+//      Result.Paciente.Nome := (PacienteJSON as TJSONObject).GetValue<string>('nome', '');
+//    end;
+//
+//    if AJSONObject.TryGetValue('itens', ProcedimentosArray) and
+//       Assigned(ProcedimentosArray) then
+//    begin
+//      for ProcedimentoItem in ProcedimentosArray do
+//      begin
+//        if ProcedimentoItem is TJSONObject then
+//        begin
+//          ProcedimentoJSON := ProcedimentoItem as TJSONObject;
+//          ItemProcedimento := TServicoFarmaceuticoItem.Create;
+//          try
+//            ItemProcedimento.Id := ProcedimentoJSON.GetValue<Int64>('id', 0);
+//
+//            ItemProcedimento.Procedimento.Id := ProcedimentoJSON.GetValue<Int64>('id', 0);
+//            ItemProcedimento.Procedimento.Descricao := ProcedimentoJSON.GetValue<string>('descricao', '');
+//            ItemProcedimento.Valor := ProcedimentoJSON.GetValue<Currency>('valor', 0);
+//
+//            Result.ItensProcedimentos.Add(ItemProcedimento);
+//          except
+//            ItemProcedimento.Free;
+//            raise;
+//          end;
+//        end;
+//      end;
+//    end;
+//
+//    // Recalcula o valor total baseado nos itens
+//    Result.CalcularValorTotal;
+//  except
+//    Result.Free;
+//    raise;
+//  end;
+//end;
+
+function TServicoFarmaceuticoMapper.DeJSON(const AJSONObject: TJSONObject; const AServicoId: Int64 = 0): TServicoFarmaceutico;
+var
+  lItemProcedimentoJSON: TJSONValue;
+  lItensProcedimentosArray: TJSONArray;
+  lPacienteJSON, lFarmaceuticoJSON, lProcedimentoJSON: TJSONObject;
+  lItemProcedimento: TServicoFarmaceuticoItem;
+  lDataStr: string;
+  i: Integer;
+//  lProcedimentoDAO: TProcedimentoDAO;
+//  lPacienteDAO: TPacienteDAO;
+//  lFarmaceuticoDAO: TFarmaceuticoDAO;
+begin
+  if not Assigned(AJSONObject) then
+    raise EArgumentNilException.Create('AJSONObject não pode ser nil');
+
+  Result := TServicoFarmaceutico.Create;
+  try
+    if AServicoId > 0 then
+      Result.Id := AServicoId
+    else
+      Result.Id := AJSONObject.GetValue<Int64>('id', 0);
+
+    lDataStr := AJSONObject.GetValue<string>('data', '');
+    if lDataStr <> '' then
+      Result.Data := ISO8601ToDate(lDataStr)
+    else
+      Result.Data := AJSONObject.GetValue<TDateTime>('data', 0);
+
+    Result.Observacoes := AJSONObject.GetValue<string>('observacoes', '');
+
+    Result.ValorTotal := AJSONObject.GetValue<Currency>('valorTotal', 0);
+
+    if AJSONObject.TryGetValue<TJSONObject>('farmaceutico', lFarmaceuticoJSON) then
+    begin
+      Result.Farmaceutico.Id := lFarmaceuticoJSON.GetValue<Int64>('id', 0);
+//      lFarmaceuticoDAO := TFarmaceuticoDAO.Create(DBModel);
+//      Result.Farmaceutico := lFarmaceuticoDAO.BuscarPorId(Result.Farmaceutico.Id);
+    end;
+
+    if AJSONObject.TryGetValue<TJSONObject>('paciente', lPacienteJSON) then
+    begin
+      Result.Paciente.Id := lPacienteJSON.GetValue<Int64>('id', 0);
+//      lPacienteDAO := TPacienteDAO.Create(DBModel);
+//      Result.Paciente := lPacienteDAO.BuscarPorId(Result.Paciente.Id);
+    end;
+
+    if AJSONObject.TryGetValue<TJSONArray>('itens', lItensProcedimentosArray) then
+    begin
+      for i := 0 to lItensProcedimentosArray.Count - 1 do
+      begin
+        lItemProcedimentoJSON := lItensProcedimentosArray.Items[i];
+        if lItemProcedimentoJSON is TJSONObject then
+        begin
+          lItemProcedimento := TServicoFarmaceuticoItem.Create;
+          try
+            lItemProcedimento.Id := TJSONObject(lItemProcedimentoJSON).GetValue<Int64>('id', 0);
+            lItemProcedimento.Valor := TJSONObject(lItemProcedimentoJSON).GetValue<Currency>('valor', 0);
+
+            if TJSONObject(lItemProcedimentoJSON).TryGetValue<TJSONObject>('procedimento', lProcedimentoJSON) then
+            begin
+              lItemProcedimento.Procedimento.Id := lProcedimentoJSON.GetValue<Int64>('id', 0);
+//              lProcedimentoDAO := TProcedimentoDAO.Create(DBModel);
+//              lItemProcedimento.Procedimento := lProcedimentoDAO.BuscarPorId(lItemProcedimento.Procedimento.Id);
+            end;
+
+            Result.ItensProcedimentos.Add(lItemProcedimento);
+          except
+            lItemProcedimento.Free;
+            raise;
+          end;
+        end;
+      end;
+    end;
+
+    if Result.ValorTotal = 0 then
+      Result.CalcularValorTotal;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+//var
+//  lItemProcedimentoJSON: TJSONValue;
+//  lItensProcedimentosArray: TJSONArray;
+//  lItemProcedimento: TServicoFarmaceuticoItem;
+//  lPacienteJSON, lFarmaceuticoJSON, lProcedimentoJSON: TJSONObject;
+//  i: Integer;
+//begin
+//  Result := TServicoFarmaceutico.Create;
+//  try
+//    // Define o ID se fornecido (usado no PUT)
+//    if AServicoId > 0 then
+//      Result.Id := AServicoId;
+//    Result.Data := AJSONObject.GetValue<TDateTime>('data');
+//    Result.Observacoes := AJSONObject.GetValue<string>('observacoes');
+//
+//    if AJSONObject.TryGetValue<TJSONObject>('paciente', lPacienteJSON) then
+//    begin
+//      Result.Paciente.Id := lPacienteJSON.GetValue<Int64>('id');
+//    end;
+//
+//    if AJSONObject.TryGetValue<TJSONObject>('farmaceutico', lFarmaceuticoJSON) then
+//    begin
+//      Result.Farmaceutico.Id := lFarmaceuticoJSON.GetValue<Int64>('id');
+//    end;
+//
+//    if AJSONObject.TryGetValue<TJSONArray>('itens', lItensProcedimentosArray) then
+//    begin
+//      for i := 0 to lItensProcedimentosArray.Count - 1 do
+//      begin
+//        lItemProcedimentoJSON := lItensProcedimentosArray.Items[i];
+//        if lItemProcedimentoJSON is TJSONObject then
+//        begin
+//          lItemProcedimento := TServicoFarmaceuticoItem.Create;
+//          try
+//            lItemProcedimento.Id := TJSONObject(lItemProcedimentoJSON).GetValue<Int64>('id', 0);
+//            lItemProcedimento.Valor := TJSONObject(lItemProcedimentoJSON).GetValue<Double>('valor');
+//
+//            if TJSONObject(lItemProcedimentoJSON).TryGetValue<TJSONObject>('procedimento', lProcedimentoJSON) then
+//            begin
+//              lItemProcedimento.Procedimento.Id := lProcedimentoJSON.GetValue<Int64>('id');
+//            end;
+//
+//            Result.ItensProcedimentos.Add(lItemProcedimento);
+//          except
+//            lItemProcedimento.Free;
+//            raise;
+//          end;
+//        end;
+//      end;
+//    end;
+//    Result.CalcularValorTotal;
+//  except
+//    Result.Free;
+//    raise;
+//  end;
+//end;
+
+function TServicoFarmaceuticoMapper.ParaJSON(const AServicoFarmaceutico: TServicoFarmaceutico): TJSONObject;
+var
+  FarmaceuticoMapper: TFarmaceuticoMapper;
+  PacienteMapper: TPacienteMapper;
+  ProcedimentoMapper: TProcedimentoMapper;
+  ProcedimentosArray: TJSONArray;
+  ItemObj: TJSONObject;
+  I: Integer;
+begin
+  Result := TJSONObject.Create;
+  try
+    // Dados básicos
+    Result.AddPair('id', TJSONNumber.Create(AServicoFarmaceutico.Id));
+    Result.AddPair('data', FormatDateTime('yyyy-mm-dd"T"hh:nn:ss', AServicoFarmaceutico.Data));
+    Result.AddPair('observacoes', AServicoFarmaceutico.Observacoes);
+    Result.AddPair('valorTotal', TJSONNumber.Create(AServicoFarmaceutico.ValorTotal));
+
+    // Farmacêutico
+    if Assigned(AServicoFarmaceutico.Farmaceutico) then
+    begin
+      FarmaceuticoMapper := TFarmaceuticoMapper.Create;
+      try
+        Result.AddPair('farmaceutico', FarmaceuticoMapper.ParaJSON(AServicoFarmaceutico.Farmaceutico));
+      finally
+        FarmaceuticoMapper.Free;
+      end;
+    end;
+
+    // Paciente
+    if Assigned(AServicoFarmaceutico.Paciente) then
+    begin
+      PacienteMapper := TPacienteMapper.Create;
+      try
+        Result.AddPair('paciente', PacienteMapper.ParaJSON(AServicoFarmaceutico.Paciente));
+      finally
+        PacienteMapper.Free;
+      end;
+    end;
+
+    // Procedimentos
+    if Assigned(AServicoFarmaceutico.ItensProcedimentos) and (AServicoFarmaceutico.ItensProcedimentos.Count > 0) then
+    begin
+      ProcedimentosArray := TJSONArray.Create;
+      ProcedimentoMapper := TProcedimentoMapper.Create;
+      try
+        for I := 0 to AServicoFarmaceutico.ItensProcedimentos.Count - 1 do
+        begin
+          ItemObj := TJSONObject.Create;
+          ItemObj.AddPair('id', TJSONNumber.Create(AServicoFarmaceutico.ItensProcedimentos[I].Id));
+          ItemObj.AddPair('valor', TJSONNumber.Create(AServicoFarmaceutico.ItensProcedimentos[I].Valor));
+          ItemObj.AddPair('procedimento',
+            ProcedimentoMapper.ParaJSON(AServicoFarmaceutico.ItensProcedimentos[I].Procedimento)
+          );
+          ProcedimentosArray.AddElement(ItemObj);
+        end;
+        Result.AddPair('itens', ProcedimentosArray);
+      finally
+        ProcedimentoMapper.Free;
+      end;
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+end.

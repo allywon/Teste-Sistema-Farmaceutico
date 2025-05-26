@@ -1,0 +1,388 @@
+unit Endpoints.Procedimentos;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, IdHeaderList, System.JSON, ModelDB, IdGlobal, IdCoderMIME,
+  IdURI, Procedimento.Controller, Model.Procedimento.Tipo;
+
+type
+  TServerEndpointsProcedimentos = class
+  private
+    FModelDB: TModelDB;
+    FProcedimentoController: TProcedimentoController;
+
+    // Endpoints específicos
+    procedure GetProcedimentos(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure GetProcedimentoById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+    procedure GetProcedimentosByTipo(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const TipoStr: string);
+    procedure PostProcedimento(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure PutProcedimento(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+    procedure DeleteProcedimento(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+
+    // Funções auxiliares
+    function LerCorpoDaRequisicao(ARequestInfo: TIdHTTPRequestInfo): string;
+  public
+    constructor Create(AModelDB: TModelDB);
+    destructor Destroy; override;
+
+    // Método para processar requisições de procedimentos
+    procedure ProcessarRequisicao(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Path: string; const Verbo: string);
+  end;
+
+implementation
+
+{ TServerEndpointsProcedimentos }
+
+constructor TServerEndpointsProcedimentos.Create(AModelDB: TModelDB);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+  FProcedimentoController := TProcedimentoController.Create(FModelDB);
+end;
+
+destructor TServerEndpointsProcedimentos.Destroy;
+begin
+  if Assigned(FProcedimentoController) then
+    FProcedimentoController.Free;
+
+  inherited;
+end;
+
+function TServerEndpointsProcedimentos.LerCorpoDaRequisicao(ARequestInfo: TIdHTTPRequestInfo): string;
+begin
+  Result := ARequestInfo.FormParams;
+
+  // Se não vier nos form params, tenta no corpo da requisição
+  if Result = '' then
+    Result := ARequestInfo.UnparsedParams;
+
+  // Se ainda estiver vazio, lê do content
+  if Result = '' then
+  begin
+    ARequestInfo.PostStream.Position := 0;
+    Result := ReadStringFromStream(ARequestInfo.PostStream, -1, IndyTextEncoding_UTF8);
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.ProcessarRequisicao(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Path: string; const Verbo: string);
+var
+  IdParam, TipoParam: string;
+  PathParts: TArray<string>;
+begin
+  // Extrai partes do caminho
+  PathParts := Path.Split(['/']);
+
+  // Rota /api/procedimentos (sem ID)
+  if Path = '/api/procedimentos' then
+  begin
+    if SameText(Verbo, 'GET') then
+      GetProcedimentos(ARequestInfo, AResponseInfo)
+    else if SameText(Verbo, 'POST') then
+      PostProcedimento(ARequestInfo, AResponseInfo)
+    else
+      AResponseInfo.ResponseNo := 405; // Method Not Allowed
+  end
+  // Rota /api/procedimentos/:id (com ID)
+  else if (Length(PathParts) > 3) and (PathParts[1] = 'api') and (PathParts[2] = 'procedimentos') and (PathParts[3] <> '') and (PathParts[3] <> 'tipo') then
+  begin
+    IdParam := PathParts[3];
+
+    if SameText(Verbo, 'GET') then
+      GetProcedimentoById(ARequestInfo, AResponseInfo, IdParam)
+    else if SameText(Verbo, 'PUT') then
+      PutProcedimento(ARequestInfo, AResponseInfo, IdParam)
+    else if SameText(Verbo, 'DELETE') then
+      DeleteProcedimento(ARequestInfo, AResponseInfo, IdParam)
+    else
+      AResponseInfo.ResponseNo := 405; // Method Not Allowed
+  end
+  // Rota /api/procedimentos/tipo/:tipoId
+  else if (Length(PathParts) > 4) and (PathParts[1] = 'api') and (PathParts[2] = 'procedimentos') and (PathParts[3] = 'tipo') and (PathParts[4] <> '') then
+  begin
+    TipoParam := PathParts[4];
+
+    if SameText(Verbo, 'GET') then
+      GetProcedimentosByTipo(ARequestInfo, AResponseInfo, TipoParam)
+    else
+      AResponseInfo.ResponseNo := 405; // Method Not Allowed
+  end
+  else
+  begin
+    AResponseInfo.ResponseNo := 404; // Not Found
+    AResponseInfo.ContentText := '{"error": "Endpoint não encontrado"}';
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.GetProcedimentos(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  JsonArray: TJSONArray;
+begin
+  JsonArray := FProcedimentoController.ObterProcedimentos;
+  try
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := JsonArray.ToJSON;
+  finally
+    JsonArray.Free;
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.GetProcedimentoById(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  ProcedimentoId: Int64;
+  JsonObj: TJSONObject;
+begin
+  ProcedimentoId := StrToInt64Def(Id, 0);
+  if ProcedimentoId <= 0 then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "ID inválido"}';
+    Exit;
+  end;
+
+  JsonObj := FProcedimentoController.ObterProcedimentoPorId(ProcedimentoId);
+  try
+    if JsonObj.Count > 0 then
+    begin
+      AResponseInfo.ResponseNo := 200;
+      AResponseInfo.ContentText := JsonObj.ToJSON;
+    end else
+    begin
+      AResponseInfo.ResponseNo := 404;
+      AResponseInfo.ContentText := '{"error": "Procedimento não encontrado"}';
+    end;
+  finally
+    JsonObj.Free;
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.GetProcedimentosByTipo(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const TipoStr: string);
+var
+  TipoId: Integer;
+  JsonArray: TJSONArray;
+begin
+  TipoId := StrToIntDef(TipoStr, -1);
+  if (TipoId < 0) or (TipoId > Ord(High(TTipoProcedimento))) then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "Tipo inválido"}';
+    Exit;
+  end;
+
+  JsonArray := FProcedimentoController.ObterProcedimentoPorTipo(TTipoProcedimento(TipoId));
+  try
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := JsonArray.ToJSON;
+  finally
+    JsonArray.Free;
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.PostProcedimento(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  RequestBody: string;
+  JsonObj: TJSONObject;
+  TipoInt: Integer;
+  Descricao: string;
+  Valor: Currency;
+  Success: Boolean;
+begin
+  RequestBody := LerCorpoDaRequisicao(ARequestInfo);
+
+  if RequestBody = '' then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "Corpo da requisição vazio"}';
+    Exit;
+  end;
+
+  try
+    JsonObj := TJSONObject.ParseJSONValue(RequestBody) as TJSONObject;
+    try
+      if not Assigned(JsonObj) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "JSON inválido"}';
+        Exit;
+      end;
+
+      if not JsonObj.TryGetValue<Integer>('tipo', TipoInt) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Tipo de procedimento não especificado"}';
+        Exit;
+      end;
+
+      if (TipoInt < 0) or (TipoInt > Ord(High(TTipoProcedimento))) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Tipo de procedimento inválido"}';
+        Exit;
+      end;
+
+      Descricao := '';
+      if not JsonObj.TryGetValue<string>('descricao', Descricao) or (Descricao.Trim = '') then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Descrição não fornecida ou inválida"}';
+        Exit;
+      end;
+
+      Valor := 0;
+      if not JsonObj.TryGetValue<Currency>('valor', Valor) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Valor não fornecido ou inválido"}';
+        Exit;
+      end;
+
+      Success := FProcedimentoController.InserirProcedimento(
+        TTipoProcedimento(TipoInt),
+        Descricao,
+        Valor
+      );
+
+      if Success then
+      begin
+        AResponseInfo.ResponseNo := 201;
+        AResponseInfo.ContentText := '{"message": "Procedimento inserido com sucesso"}';
+      end else
+      begin
+        AResponseInfo.ResponseNo := 500;
+        AResponseInfo.ContentText := '{"error": "Erro ao inserir procedimento"}';
+      end;
+    finally
+      JsonObj.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := Format('{"error": "Erro ao processar a requisição: %s"}', [E.Message]);
+    end;
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.PutProcedimento(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  ProcedimentoId: Int64;
+  RequestBody: string;
+  JsonObj: TJSONObject;
+  TipoInt: Integer;
+  Descricao: string;
+  Valor: Currency;
+  Success: Boolean;
+begin
+  ProcedimentoId := StrToInt64Def(Id, 0);
+  if ProcedimentoId <= 0 then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "ID inválido"}';
+    Exit;
+  end;
+
+  RequestBody := LerCorpoDaRequisicao(ARequestInfo);
+
+  if RequestBody = '' then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "Corpo da requisição vazio"}';
+    Exit;
+  end;
+
+  try
+    JsonObj := TJSONObject.ParseJSONValue(RequestBody) as TJSONObject;
+    try
+      if not Assigned(JsonObj) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "JSON inválido"}';
+        Exit;
+      end;
+
+      if not JsonObj.TryGetValue<Integer>('tipo', TipoInt) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Tipo de procedimento não especificado"}';
+        Exit;
+      end;
+
+      if (TipoInt < 0) or (TipoInt > Ord(High(TTipoProcedimento))) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Tipo de procedimento inválido"}';
+        Exit;
+      end;
+
+      Descricao := '';
+      if not JsonObj.TryGetValue<string>('descricao', Descricao) or (Descricao.Trim = '') then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Descrição não fornecida ou inválida"}';
+        Exit;
+      end;
+
+      Valor := 0;
+      if not JsonObj.TryGetValue<Currency>('valor', Valor) then
+      begin
+        AResponseInfo.ResponseNo := 400;
+        AResponseInfo.ContentText := '{"error": "Valor não fornecido ou inválido"}';
+        Exit;
+      end;
+
+      Success := FProcedimentoController.AtualizarProcedimento(
+        ProcedimentoId,
+        TTipoProcedimento(TipoInt),
+        Descricao,
+        Valor
+      );
+
+      if Success then
+      begin
+        AResponseInfo.ResponseNo := 200;
+        AResponseInfo.ContentText := '{"message": "Procedimento atualizado com sucesso"}';
+      end else
+      begin
+        AResponseInfo.ResponseNo := 500;
+        AResponseInfo.ContentText := '{"error": "Erro ao atualizar procedimento"}';
+      end;
+    finally
+      JsonObj.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      AResponseInfo.ResponseNo := 400;
+      AResponseInfo.ContentText := Format('{"error": "Erro ao processar a requisição: %s"}', [E.Message]);
+    end;
+  end;
+end;
+
+procedure TServerEndpointsProcedimentos.DeleteProcedimento(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo; const Id: string);
+var
+  ProcedimentoId: Int64;
+  Success: Boolean;
+begin
+  ProcedimentoId := StrToInt64Def(Id, 0);
+  if ProcedimentoId <= 0 then
+  begin
+    AResponseInfo.ResponseNo := 400;
+    AResponseInfo.ContentText := '{"error": "ID inválido"}';
+    Exit;
+  end;
+
+  Success := FProcedimentoController.ExcluirProcedimento(ProcedimentoId);
+
+  if Success then
+  begin
+    AResponseInfo.ResponseNo := 200;
+    AResponseInfo.ContentText := '{"message": "Procedimento excluído com sucesso"}';
+  end else
+  begin
+    AResponseInfo.ResponseNo := 500;
+    AResponseInfo.ContentText := '{"error": "Erro ao excluir procedimento. Verifique se não está em uso."}';
+  end;
+end;
+
+end.

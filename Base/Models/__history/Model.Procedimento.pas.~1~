@@ -1,0 +1,35 @@
+unit Cadastro.Procedimento;
+
+interface
+
+uses
+  System.SysUtils, System.DateUtils, Domain.Procedimento.Tipo;
+
+type
+  TProcedimento = class
+  private
+    FId: Int64;
+    FTipo: TTipoProcedimento;
+    FDescricao: string;
+    FValor: Currency;
+  public
+    property Id: Int64 read FId write FId;
+    property Tipo: TTipoProcedimento read FTipo write FTipo;
+    property Descricao: string read FDescricao write FDescricao;
+    property Valor: Currency read FValor write FValor;
+
+    procedure Limpar;
+  end;
+
+implementation
+
+procedure TProcedimento.Limpar;
+begin
+  FId := 0;
+  FTipo := tpAtencaoDomiciliar;
+  FDescricao := '';
+  FValor := 0;
+end;
+
+end.
+

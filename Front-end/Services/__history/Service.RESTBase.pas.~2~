@@ -1,0 +1,51 @@
+unit Service.RESTBase;
+
+interface
+
+uses
+  REST.Client, REST.Types, REST.Response.Adapter;
+
+type
+  TRESTServiceBase = class
+  protected
+    FRESTClient: TRESTClient;
+    FRESTRequest: TRESTRequest;
+    FRESTResponse: TRESTResponse;
+
+    procedure ConfigurarREST;
+  public
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+implementation
+
+procedure TRESTServiceBase.ConfigurarREST;
+begin
+  FRESTClient.BaseURL := 'http://localhost:8085/api';
+  FRESTClient.Accept := 'application/json';
+  FRESTClient.ContentType := 'application/json';
+end;
+
+constructor TRESTServiceBase.Create;
+begin
+  FRESTClient := TRESTClient.Create(nil);
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest := TRESTRequest.Create(nil);
+
+  FRESTRequest.Client := FRESTClient;
+  FRESTRequest.Response := FRESTResponse;
+
+  ConfigurarREST;
+end;
+
+destructor TRESTServiceBase.Destroy;
+begin
+  FRESTRequest.Free;
+  FRESTResponse.Free;
+  FRESTClient.Free;
+  inherited;
+end;
+
+end.
+

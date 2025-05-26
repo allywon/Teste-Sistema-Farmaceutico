@@ -1,0 +1,63 @@
+unit Model.ServicoFarmaceutico;
+
+interface
+
+uses
+  System.SysUtils, System.Generics.Collections, Model.Pessoa, Model.Procedimento;
+
+type
+  TServicoFarmaceutico = class
+  private
+    FId: Int64;
+    FData: TDateTime;
+    FFarmaceutico: TFarmaceutico;
+    FPaciente: TPaciente;
+    FProcedimentos: TObjectList<TProcedimento>;
+    FObservacoes: string;
+    FValorTotal: Currency;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    property Id: Int64 read FId write FId;
+    property Data: TDateTime read FData write FData;
+    property Farmaceutico: TFarmaceutico read FFarmaceutico write FFarmaceutico;
+    property Paciente: TPaciente read FPaciente write FPaciente;
+    property Procedimentos: TObjectList<TProcedimento> read FProcedimentos;
+    property Observacoes: string read FObservacoes write FObservacoes;
+    property ValorTotal: Currency read FValorTotal write FValorTotal;
+
+    procedure CalcularValorTotal;
+  end;
+
+implementation
+
+{ TServicoFarmaceutico }
+
+constructor TServicoFarmaceutico.Create;
+begin
+  inherited;
+  FFarmaceutico := TFarmaceutico.Create;
+  FPaciente := TPaciente.Create;
+  FProcedimentos := TObjectList<TProcedimento>.Create(True);
+end;
+
+destructor TServicoFarmaceutico.Destroy;
+begin
+  FreeAndNil(FFarmaceutico);
+  FreeAndNil(FPaciente);
+  FreeAndNil(FProcedimentos);
+  inherited;
+end;
+
+procedure TServicoFarmaceutico.CalcularValorTotal;
+var
+  lProcedimento: TProcedimento;
+begin
+  FValorTotal := 0;
+  for lProcedimento in FProcedimentos do
+    FValorTotal := FValorTotal + lProcedimento.Valor;
+end;
+
+end.
+

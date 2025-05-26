@@ -1,0 +1,294 @@
+unit Cadastro.Farmaceutico.View;
+
+interface
+
+uses
+  Cadastro.PessoaBase.View, Model.Pessoa, Controller.Pessoa, Data.DB,
+  FireDAC.Comp.Client, System.Generics.Collections, Vcl.Forms, System.Classes,
+  Vcl.Grids, Vcl.DBGrids, Vcl.WinXPickers, Vcl.StdCtrls, Vcl.Controls,
+  Vcl.Buttons, Vcl.ExtCtrls;
+
+type
+  TfCadastroFarmaceutico = class(TfCadastroPessoaBase)
+    lblCRF: TLabel;
+    edtCRF: TEdit;
+    lblEspecilizacao: TLabel;
+    edtEspecializacao: TEdit;
+    procedure btnNovoClick(Sender: TObject);
+    procedure btnEditarClick(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+    procedure btnSalvarClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+  private
+    FLstFarmaceuticos: TFDMemTable;
+    FFarmaceutico: TFarmaceutico;
+    FController: TPessoaController;
+
+    function ValidaCadastro: Boolean;
+    procedure PreparaMemtable;
+  protected
+    procedure PreencherCampos; override;
+    procedure LimparCampos; override;
+    procedure SalvarRegistro; override;
+    procedure PesquisarRegistros; override;
+    procedure FiltrarRegistros(const ATexto: string); override;
+    procedure ConfigurarModoEdicao(AEditando: Boolean); override;
+  public
+  end;
+
+var
+  fCadastroFarmaceutico: TfCadastroFarmaceutico;
+
+implementation
+
+{$R *.dfm}
+
+uses System.SysUtils, Vcl.Dialogs;
+
+{ TfCadastroFarmaceutico }
+
+procedure TfCadastroFarmaceutico.btnEditarClick(Sender: TObject);
+begin
+  if not FLstFarmaceuticos.IsEmpty then
+  begin
+    PreencherCampos;
+    ConfigurarModoEdicao(True);
+    edtNome.SetFocus;
+  end
+  else
+    ShowMessage('Nenhum farmaceutico selecionado para edição.');
+end;
+
+procedure TfCadastroFarmaceutico.btnExcluirClick(Sender: TObject);
+var
+  lId: Int64;
+begin
+  if FLstFarmaceuticos.IsEmpty then
+  begin
+    ShowMessage('Não há farmaceutico selecionado para excluir.');
+    Exit;
+  end;
+
+  if MessageDlg('Deseja realmente excluir este farmaceutico?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    lId := FLstFarmaceuticos.FieldByName('Id').AsLargeInt;
+    if FController.Excluir(lId, ptFarmaceutico) then
+    begin
+      PesquisarRegistros;
+      ShowMessage('Farmaceutico excluído com sucesso!');
+    end
+    else
+      ShowMessage('Erro ao excluir o farmaceutico.');
+  end;
+end;
+
+procedure TfCadastroFarmaceutico.btnNovoClick(Sender: TObject);
+begin
+  FLstFarmaceuticos.Append;
+  LimparCampos;
+  ConfigurarModoEdicao(True);
+  edtNome.SetFocus;
+end;
+
+procedure TfCadastroFarmaceutico.btnSalvarClick(Sender: TObject);
+begin
+  btnSalvar.SetFocus;
+
+  if not ValidaCadastro then
+    Exit;
+
+  SalvarRegistro;
+end;
+
+procedure TfCadastroFarmaceutico.ConfigurarModoEdicao(AEditando: Boolean);
+begin
+  inherited;
+  btnEditar.Enabled := not AEditando and not FLstFarmaceuticos.IsEmpty;
+  btnExcluir.Enabled := not AEditando and not FLstFarmaceuticos.IsEmpty;
+end;
+
+procedure TfCadastroFarmaceutico.PreparaMemtable;
+begin
+  FLstFarmaceuticos := TFDMemTable.Create(Self);
+  with FLstFarmaceuticos.FieldDefs do
+  begin
+    Add('Id', ftLargeint);
+    Add('Nome', ftString, 100);
+    Add('CPF', ftString, 14);
+    Add('DataNascimento', ftDate);
+    Add('CRF', ftString, 5);
+    Add('Especializacao', ftString, 50);
+  end;
+  FLstFarmaceuticos.CreateDataSet;
+  dsPessoas.DataSet := FLstFarmaceuticos;
+end;
+
+procedure TfCadastroFarmaceutico.FiltrarRegistros(const ATexto: string);
+var
+  lTextoPesquisa: string;
+begin
+  lTextoPesquisa := AnsiLowerCase(ATexto);
+
+  if lTextoPesquisa = EmptyStr then
+  begin
+    FLstFarmaceuticos.Filtered := False;
+    Exit;
+  end;
+
+  FLstFarmaceuticos.FilterOptions := [foCaseInsensitive];
+  FLstFarmaceuticos.Filter := Format('(ID LIKE ''%%%s%%'') OR (NOME LIKE ''%%%s%%'') OR (CRF LIKE ''%%%s%%'')',
+                                 [lTextoPesquisa, lTextoPesquisa, lTextoPesquisa]);
+  FLstFarmaceuticos.Filtered := True;
+end;
+
+procedure TfCadastroFarmaceutico.FormCreate(Sender: TObject);
+begin
+  inherited;
+  FController := TPessoaController.Create;
+  FFarmaceutico := TFarmaceutico.Create;
+  PreparaMemtable;
+end;
+
+procedure TfCadastroFarmaceutico.FormDestroy(Sender: TObject);
+begin
+  FreeAndNil(FController);
+  FreeAndNil(FFarmaceutico);
+  FreeAndNil(FLstFarmaceuticos);
+  inherited;
+end;
+
+procedure TfCadastroFarmaceutico.FormShow(Sender: TObject);
+begin
+  inherited;
+  PesquisarRegistros;
+  ConfigurarModoEdicao(False);
+end;
+
+procedure TfCadastroFarmaceutico.LimparCampos;
+begin
+  edtCodigo.Text := EmptyStr;
+  edtNome.Text := EmptyStr;
+  edtCPF.Text := EmptyStr;
+  edtCRF.Text := EmptyStr;
+  edtEspecializacao.Text := EmptyStr;
+  edtDtNascimento.Date := Date;
+end;
+
+procedure TfCadastroFarmaceutico.PesquisarRegistros;
+var
+  lLista: TObjectList<TPessoaBase>;
+  lPessoa: TPessoaBase;
+  lTextoFiltro: string;
+begin
+  lTextoFiltro := edtPesquisa.Text;
+
+  FLstFarmaceuticos.Filtered := False;
+  FLstFarmaceuticos.DisableControls;
+
+  try
+    FLstFarmaceuticos.EmptyDataSet;
+
+    lLista := FController.BuscarTodos(ptFarmaceutico);
+    try
+      for lPessoa in lLista do
+      begin
+        if lPessoa is TFarmaceutico then
+        begin
+          FLstFarmaceuticos.Append;
+          FLstFarmaceuticos.FieldByName('Id').AsLargeInt := TFarmaceutico(lPessoa).Id;
+          FLstFarmaceuticos.FieldByName('Nome').AsString := TFarmaceutico(lPessoa).Nome;
+          FLstFarmaceuticos.FieldByName('CPF').AsString := TFarmaceutico(lPessoa).CPF;
+          FLstFarmaceuticos.FieldByName('CRF').AsString := TFarmaceutico(lPessoa).CRF;
+          FLstFarmaceuticos.FieldByName('Especializacao').AsString := TFarmaceutico(lPessoa).Especializacao;
+          FLstFarmaceuticos.FieldByName('DataNascimento').AsDateTime := TFarmaceutico(lPessoa).DataNascimento;
+          FLstFarmaceuticos.Post;
+        end;
+      end;
+    finally
+      lLista.Free;
+    end;
+  finally
+    FLstFarmaceuticos.EnableControls;
+
+    if lTextoFiltro <> EmptyStr then
+      FiltrarRegistros(lTextoFiltro);
+  end;
+end;
+
+procedure TfCadastroFarmaceutico.PreencherCampos;
+begin
+  edtCodigo.Text := FLstFarmaceuticos.FieldByName('Id').AsString;
+  edtNome.Text := FLstFarmaceuticos.FieldByName('Nome').AsString;
+  edtCPF.Text := FLstFarmaceuticos.FieldByName('CPF').AsString;
+  edtCRF.Text := FLstFarmaceuticos.FieldByName('CRF').AsString;
+  edtEspecializacao.Text := FLstFarmaceuticos.FieldByName('Especializacao').AsString;
+  edtDtNascimento.Date := FLstFarmaceuticos.FieldByName('DataNascimento').AsDateTime;
+
+  FFarmaceutico.Id := StrToInt64Def(edtCodigo.Text, 0);
+  FFarmaceutico.Nome := edtNome.Text;
+  FFarmaceutico.CPF := edtCPF.Text;
+  FFarmaceutico.DataNascimento := edtDtNascimento.Date;
+  FFarmaceutico.CRF := edtCRF.Text;
+  FFarmaceutico.Especializacao := edtEspecializacao.Text;
+end;
+
+procedure TfCadastroFarmaceutico.SalvarRegistro;
+var
+  lSucesso: Boolean;
+begin
+  FFarmaceutico.Id := StrToInt64Def(edtCodigo.Text, 0);
+  FFarmaceutico.Nome := edtNome.Text;
+  FFarmaceutico.CPF := edtCPF.Text;
+  FFarmaceutico.CRF := edtCRF.Text;
+  FFarmaceutico.Especializacao := edtEspecializacao.Text;
+  FFarmaceutico.DataNascimento := edtDtNascimento.Date;
+
+  lSucesso := FController.Salvar(FFarmaceutico, ptFarmaceutico);
+
+  if lSucesso then
+  begin
+    ShowMessage('Farmacêutico salvo com sucesso!');
+    PesquisarRegistros;
+    ConfigurarModoEdicao(False);
+  end
+  else
+    ShowMessage('Erro ao salvar farmacêutico.' + #13 + FFarmaceutico.Aviso);
+end;
+
+function TfCadastroFarmaceutico.ValidaCadastro: Boolean;
+begin
+  if Trim(edtNome.Text) = EmptyStr then
+  begin
+    ShowMessage('O nome do farmaceutico é obrigatório.');
+    edtNome.SetFocus;
+    Exit(False);
+  end;
+
+  if Trim(edtCPF.Text) = EmptyStr then
+  begin
+    ShowMessage('O CPF do farmaceutico é obrigatório.');
+    edtCPF.SetFocus;
+    Exit(False);
+  end;
+
+  if Trim(edtCRF.Text) = EmptyStr then
+  begin
+    ShowMessage('O CRF do farmaceutico é obrigatório.');
+    edtCPF.SetFocus;
+    Exit(False);
+  end;
+
+  if Trim(edtEspecializacao.Text) = EmptyStr then
+  begin
+    ShowMessage('A especialização do farmaceutico é obrigatória.');
+    edtCPF.SetFocus;
+    Exit(False);
+  end;
+
+  Result := True;
+end;
+
+end.

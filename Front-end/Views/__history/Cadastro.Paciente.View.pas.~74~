@@ -1,0 +1,277 @@
+unit Cadastro.Paciente.View;
+
+interface
+
+uses
+  Cadastro.PessoaBase.View, Model.Pessoa, Controller.Pessoa, Data.DB,
+  FireDAC.Comp.Client, System.Generics.Collections, Vcl.Forms, System.Classes,
+  Vcl.Grids, Vcl.DBGrids, Vcl.WinXPickers, Vcl.StdCtrls, Vcl.Controls,
+  Vcl.Buttons, Vcl.ExtCtrls;
+
+type
+  TfCadastroPaciente = class(TfCadastroPessoaBase)
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnNovoClick(Sender: TObject);
+    procedure btnEditarClick(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+    procedure btnSalvarClick(Sender: TObject);
+    procedure btnCancelarClick(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+  private
+    FLstPacientes: TFDMemTable;
+    FPaciente: TPaciente;
+    FController: TPessoaController;
+
+    function ValidaCadastro: Boolean;
+    procedure PreparaMemTable;
+  protected
+    procedure PreencherCampos; override;
+    procedure LimparCampos; override;
+    procedure SalvarRegistro; override;
+    procedure PesquisarRegistros; override;
+    procedure FiltrarRegistros(const ATexto: string); override;
+    procedure ConfigurarModoEdicao(AEditando: Boolean); override;
+  public
+  end;
+
+var
+  fCadastroPaciente: TfCadastroPaciente;
+
+implementation
+
+{$R *.dfm}
+
+uses System.SysUtils, Vcl.Dialogs;
+
+procedure TfCadastroPaciente.PesquisarRegistros;
+var
+  lLista: TObjectList<TPessoaBase>;
+  lPessoa: TPessoaBase;
+  lTextoFiltro: string;
+begin
+  lTextoFiltro := edtPesquisa.Text;
+
+  FLstPacientes.Filtered := False;
+  FLstPacientes.DisableControls;
+
+  try
+    FLstPacientes.EmptyDataSet;
+
+    lLista := FController.BuscarTodos(ptPaciente);
+    try
+      for lPessoa in lLista do
+      begin
+        if lPessoa is TPaciente then
+        begin
+          FLstPacientes.Append;
+          FLstPacientes.FieldByName('Id').AsLargeInt := TPaciente(lPessoa).Id;
+          FLstPacientes.FieldByName('Nome').AsString := TPaciente(lPessoa).Nome;
+          FLstPacientes.FieldByName('CPF').AsString := TPaciente(lPessoa).CPF;
+          FLstPacientes.FieldByName('DataNascimento').AsDateTime := TPaciente(lPessoa).DataNascimento;
+          FLstPacientes.Post;
+        end;
+      end;
+    finally
+      lLista.Free;
+    end;
+  finally
+    FLstPacientes.EnableControls;
+
+    if lTextoFiltro <> '' then
+      FiltrarRegistros(lTextoFiltro);
+  end;
+end;
+
+procedure TfCadastroPaciente.btnCancelarClick(Sender: TObject);
+begin
+  if FLstPacientes.State in [dsEdit, dsInsert] then
+    FLstPacientes.Cancel;
+  LimparCampos;
+  inherited;
+end;
+
+procedure TfCadastroPaciente.btnEditarClick(Sender: TObject);
+begin
+  if not FLstPacientes.IsEmpty then
+  begin
+    PreencherCampos;
+    ConfigurarModoEdicao(True);
+    edtNome.SetFocus;
+  end
+  else
+    ShowMessage('Nenhum paciente selecionado para edição.');
+end;
+
+procedure TfCadastroPaciente.btnExcluirClick(Sender: TObject);
+var
+  lId: Int64;
+begin
+  if FLstPacientes.IsEmpty then
+  begin
+    ShowMessage('Não há paciente selecionado para excluir.');
+    Exit;
+  end;
+
+  if MessageDlg('Deseja realmente excluir este paciente?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    lId := FLstPacientes.FieldByName('Id').AsLargeInt;
+    if FController.ExcluirPessoa(lId, ptPaciente) then
+    begin
+      PesquisarRegistros;
+      ShowMessage('Paciente excluído com sucesso!');
+    end
+    else
+      ShowMessage('Erro ao excluir o paciente.');
+  end;
+end;
+
+procedure TfCadastroPaciente.btnNovoClick(Sender: TObject);
+begin
+  FLstPacientes.Append;
+  LimparCampos;
+  ConfigurarModoEdicao(True);
+  edtNome.SetFocus;
+end;
+
+procedure TfCadastroPaciente.btnSalvarClick(Sender: TObject);
+begin
+  btnSalvar.SetFocus;
+  if not ValidaCadastro then
+    Exit;
+
+  SalvarRegistro;
+end;
+
+procedure TfCadastroPaciente.ConfigurarModoEdicao(AEditando: Boolean);
+begin
+  inherited;
+  btnEditar.Enabled := not AEditando and not FLstPacientes.IsEmpty;
+  btnExcluir.Enabled := not AEditando and not FLstPacientes.IsEmpty;
+end;
+
+procedure TfCadastroPaciente.PreparaMemTable;
+begin
+  FLstPacientes := TFDMemTable.Create(Self);
+  with FLstPacientes.FieldDefs do
+  begin
+    Add('Id', ftLargeint);
+    Add('Nome', ftString, 100);
+    Add('CPF', ftString, 14);
+    Add('DataNascimento', ftDate);
+  end;
+  FLstPacientes.CreateDataSet;
+  dsPessoas.DataSet := FLstPacientes;
+end;
+
+procedure TfCadastroPaciente.FiltrarRegistros(const ATexto: string);
+var
+  lTextoPesquisa: string;
+begin
+  lTextoPesquisa := AnsiLowerCase(ATexto);
+
+  if lTextoPesquisa = '' then
+  begin
+    FLstPacientes.Filtered := False;
+    Exit;
+  end;
+
+  FLstPacientes.FilterOptions := [foCaseInsensitive];
+  FLstPacientes.Filter := Format('(ID LIKE ''%%%s%%'') OR (NOME LIKE ''%%%s%%'') OR (CPF LIKE ''%%%s%%'')',
+                                 [lTextoPesquisa, lTextoPesquisa, lTextoPesquisa]);
+  FLstPacientes.Filtered := True;
+end;
+
+procedure TfCadastroPaciente.PreencherCampos;
+begin
+  edtCodigo.Text := FLstPacientes.FieldByName('Id').AsString;
+  edtNome.Text := FLstPacientes.FieldByName('Nome').AsString;
+  edtCPF.Text := FLstPacientes.FieldByName('CPF').AsString;
+  edtDtNascimento.Date := FLstPacientes.FieldByName('DataNascimento').AsDateTime;
+
+  FPaciente.Id := StrToInt64Def(edtCodigo.Text, 0);
+  FPaciente.Nome := edtNome.Text;
+  FPaciente.CPF := edtCPF.Text;
+  FPaciente.DataNascimento := edtDtNascimento.Date;
+end;
+
+procedure TfCadastroPaciente.FormCreate(Sender: TObject);
+begin
+  inherited;
+  FController := TPessoaController.Create;
+  FPaciente := TPaciente.Create;
+  PreparaMemTable;
+end;
+
+procedure TfCadastroPaciente.FormDestroy(Sender: TObject);
+begin
+  FreeAndNil(FController);
+  FreeAndNil(FPaciente);
+  FreeAndNil(FLstPacientes);
+  inherited;
+end;
+
+procedure TfCadastroPaciente.FormShow(Sender: TObject);
+begin
+  inherited;
+  PesquisarRegistros;
+  ConfigurarModoEdicao(False);
+end;
+
+procedure TfCadastroPaciente.LimparCampos;
+begin
+  edtCodigo.Text := '';
+  edtNome.Text := '';
+  edtCPF.Text := '';
+  edtDtNascimento.Date := Date;
+end;
+
+procedure TfCadastroPaciente.SalvarRegistro;
+var
+  lEdicao, lResult: Boolean;
+begin
+  FPaciente.Nome := edtNome.Text;
+  FPaciente.CPF := edtCPF.Text;
+  FPaciente.DataNascimento := edtDtNascimento.Date;
+
+  lEdicao := FLstPacientes.Locate('Id', StrToInt64Def(edtCodigo.Text, 0), []);
+
+  if lEdicao then
+  begin
+    FPaciente.Id := StrToInt64Def(edtCodigo.Text, 0);
+    lResult := FController.AlterarPessoa(FPaciente, ptPaciente);
+  end
+  else
+    lResult := FController.GravarPessoa(FPaciente, ptPaciente);
+
+  PesquisarRegistros;
+  ConfigurarModoEdicao(False);
+
+  if lResult then
+     ShowMessage('Paciente salvo com sucesso!')
+  else
+     ShowMessage('Erro ao salvar paciente.');
+end;
+
+function TfCadastroPaciente.ValidaCadastro: Boolean;
+begin
+  if Trim(edtNome.Text) = '' then
+  begin
+    ShowMessage('O nome do paciente é obrigatório.');
+    edtNome.SetFocus;
+    Exit(False);
+  end;
+
+  if Trim(edtCPF.Text) = '' then
+  begin
+    ShowMessage('O CPF do paciente é obrigatório.');
+    edtCPF.SetFocus;
+    Exit(False);
+  end;
+
+  Result := True;
+end;
+
+end.
+

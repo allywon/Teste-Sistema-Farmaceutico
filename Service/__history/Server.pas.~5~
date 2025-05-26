@@ -1,0 +1,155 @@
+unit Server;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, IdHTTPServer, IdCustomHTTPServer,
+  IdContext, System.JSON, IdGlobal, IdCoderMIME, IdURI,
+  Routes.Manager, ModelDB;
+
+type
+  TServer = class
+  private
+    FServer: TIdHTTPServer;
+    FRouteManager: TRouteManager;
+
+    procedure OnCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure ProcessarRequisicao(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+    procedure ConfigurarCORS(AResponseInfo: TIdHTTPResponseInfo);
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Iniciar(const Porta: Integer = 8080);
+    procedure Parar;
+
+    property Server: TIdHTTPServer read FServer;
+  end;
+
+implementation
+
+{ TServer }
+
+constructor TServer.Create;
+begin
+  FServer := TIdHTTPServer.Create(nil);
+  FServer.OnCommandGet := OnCommand;
+  FServer.OnCommandOther := OnCommand;
+
+  if not DBModel.FDConnection.Connected then
+    DBModel.ConectarBanco;
+
+  FRouteManager := TRouteManager.Create(FServer, DBModel);
+end;
+
+destructor TServer.Destroy;
+begin
+  FreeAndNil(FRouteManager);
+
+  if Assigned(FServer) then
+  begin
+    if FServer.Active then
+      FServer.Active := False;
+    FServer.Free;
+  end;
+
+  inherited;
+end;
+
+procedure TServer.Iniciar(const Porta: Integer);
+begin
+  FServer.DefaultPort := Porta;
+  FServer.Active := True;
+
+  WriteLn('Servidor HTTP iniciado na porta ' + IntToStr(Porta));
+  FRouteManager.RegistrarRotas;
+end;
+
+procedure TServer.Parar;
+begin
+  if FServer.Active then
+  begin
+    FServer.Active := False;
+    WriteLn('Servidor HTTP encerrado');
+  end;
+end;
+
+procedure TServer.OnCommand(AContext: TIdContext; ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+var
+  NewPostStream: TMemoryStream;
+  OldPosition: Int64;
+begin
+  try
+    if Assigned(ARequestInfo.PostStream) and (ARequestInfo.PostStream.Size > 0) then
+    begin
+      NewPostStream := TMemoryStream.Create;
+      try
+        OldPosition := ARequestInfo.PostStream.Position;
+
+        ARequestInfo.PostStream.Position := 0;
+        NewPostStream.CopyFrom(ARequestInfo.PostStream, ARequestInfo.PostStream.Size);
+
+        ARequestInfo.PostStream.Free;
+        ARequestInfo.PostStream := NewPostStream;
+
+        ARequestInfo.PostStream.Position := OldPosition;
+
+        NewPostStream := nil;
+      except
+        NewPostStream.Free;
+        raise;
+      end;
+    end;
+
+    AResponseInfo.ContentType := 'application/json; charset=UTF-8';
+    ConfigurarCORS(AResponseInfo);
+
+    if SameText(ARequestInfo.Command, 'OPTIONS') then
+    begin
+      AResponseInfo.ResponseNo := 200;
+      Exit;
+    end;
+
+    ProcessarRequisicao(ARequestInfo, AResponseInfo);
+  except
+    on E: Exception do
+    begin
+      AResponseInfo.ResponseNo := 500;
+      AResponseInfo.ContentText := Format('{"error":"Erro interno: %s"}', [E.Message]);
+    end;
+  end;
+end;
+//begin
+//  try
+//    AResponseInfo.ContentType := 'application/json; charset=UTF-8';
+//    ConfigurarCORS(AResponseInfo);
+//
+//    if SameText(ARequestInfo.Command, 'OPTIONS') then
+//    begin
+//      AResponseInfo.ResponseNo := 200;
+//      Exit;
+//    end;
+//
+//    ProcessarRequisicao(ARequestInfo, AResponseInfo);
+//  except
+//    on E: Exception do
+//    begin
+//      AResponseInfo.ResponseNo := 500;
+//      AResponseInfo.ContentText := Format('{"error":"Erro interno: %s"}', [E.Message]);
+//    end;
+//  end;
+//end;
+
+procedure TServer.ProcessarRequisicao(ARequestInfo: TIdHTTPRequestInfo; AResponseInfo: TIdHTTPResponseInfo);
+begin
+  FRouteManager.ProcessarRequisicao(ARequestInfo, AResponseInfo);
+end;
+
+procedure TServer.ConfigurarCORS(AResponseInfo: TIdHTTPResponseInfo);
+begin
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Origin'] := '*';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Methods'] := 'GET, POST, PUT, DELETE, OPTIONS';
+  AResponseInfo.CustomHeaders.Values['Access-Control-Allow-Headers'] := 'Content-Type, Authorization';
+end;
+
+end.

@@ -1,0 +1,123 @@
+unit Farmaceutico.Controller;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, System.JSON, FireDAC.Comp.Client,
+  Data.DB, ModelDB, Model.Pessoa, Farmaceutico.Mapper, Farmaceutico.Dao;
+
+type
+  TFarmaceuticoController = class
+  private
+    FModelDB: TModelDB;
+    FMapper: TFarmaceuticoMapper;
+    FFarmaceuticoDAO: TFarmaceuticoDAO;
+  public
+    constructor Create(AModelDB: TModelDB);
+    destructor Destroy; override;
+    function ObterFarmaceuticos: TJSONArray;
+    function ObterFarmaceuticoPorId(const AId: Int64): TJSONObject;
+    function ObterFarmaceuticoPorCPF(const ACPF: string): TJSONObject;
+    function ObterFarmaceuticoPorCRF(const ACRF: string): TJSONObject;
+    function InserirFarmaceutico(AFarmaceutico: TFarmaceutico): Boolean;
+    function AtualizarFarmaceutico(const AId: Int64; AFarmaceutico: TFarmaceutico): Boolean;
+    function ExcluirFarmaceutico(const AId: Int64): Boolean;
+    function CarregarFarmaceutico(const AId: Int64; AFarmaceutico: TFarmaceutico): Boolean;
+  end;
+
+implementation
+
+{ TFarmaceuticoController }
+
+constructor TFarmaceuticoController.Create(AModelDB: TModelDB);
+begin
+  inherited Create;
+  FModelDB := AModelDB;
+  FMapper := TFarmaceuticoMapper.Create;
+  FFarmaceuticoDAO := TFarmaceuticoDAO.Create(AModelDB);
+end;
+
+destructor TFarmaceuticoController.Destroy;
+begin
+  FreeAndNil(FMapper);
+  FreeAndNil(FFarmaceuticoDAO);
+  inherited;
+end;
+
+function TFarmaceuticoController.ObterFarmaceuticos: TJSONArray;
+var
+  lLista: TArray<TFarmaceutico>;
+  lFarmaceutico: TFarmaceutico;
+begin
+  Result := TJSONArray.Create;
+  try
+    lLista := FFarmaceuticoDAO.ListarTodos;
+    for lFarmaceutico in lLista do
+      Result.AddElement(FMapper.ParaJSON(lFarmaceutico));
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Erro ao obter farmacêuticos: ' + E.Message);
+    end;
+  end;
+end;
+
+function TFarmaceuticoController.ObterFarmaceuticoPorId(const AId: Int64): TJSONObject;
+var
+  lFarmaceutico: TFarmaceutico;
+begin
+  lFarmaceutico := FFarmaceuticoDAO.BuscarPorId(AId);
+  if Assigned(lFarmaceutico) then
+    Result := FMapper.ParaJSON(lFarmaceutico)
+  else
+    Result := TJSONObject.Create;
+
+  FreeAndNil(lFarmaceutico);
+end;
+
+function TFarmaceuticoController.ObterFarmaceuticoPorCPF(const ACPF: string): TJSONObject;
+var
+  Farm: TFarmaceutico;
+begin
+  Farm := FFarmaceuticoDAO.BuscarPorCPF(ACPF);
+  if Assigned(Farm) then
+    Result := FMapper.ParaJSON(Farm)
+  else
+    Result := TJSONObject.Create;
+  Farm.Free;
+end;
+
+function TFarmaceuticoController.ObterFarmaceuticoPorCRF(const ACRF: string): TJSONObject;
+var
+  Farm: TFarmaceutico;
+begin
+  Farm := FFarmaceuticoDAO.BuscarPorCRF(ACRF);
+  if Assigned(Farm) then
+    Result := FMapper.ParaJSON(Farm)
+  else
+    Result := TJSONObject.Create;
+  Farm.Free;
+end;
+
+function TFarmaceuticoController.InserirFarmaceutico(AFarmaceutico: TFarmaceutico): Boolean;
+begin
+  Result := FFarmaceuticoDAO.Inserir(AFarmaceutico);
+end;
+
+function TFarmaceuticoController.AtualizarFarmaceutico(const AId: Int64; AFarmaceutico: TFarmaceutico): Boolean;
+begin
+  Result := FFarmaceuticoDAO.Atualizar(AId, AFarmaceutico);
+end;
+
+function TFarmaceuticoController.ExcluirFarmaceutico(const AId: Int64): Boolean;
+begin
+  Result := FFarmaceuticoDAO.Excluir(AId);
+end;
+
+function TFarmaceuticoController.CarregarFarmaceutico(const AId: Int64; Farmaceutico: TFarmaceutico): Boolean;
+begin
+  Result := FFarmaceuticoDAO.Carregar(AId, Farmaceutico);
+end;
+
+end.

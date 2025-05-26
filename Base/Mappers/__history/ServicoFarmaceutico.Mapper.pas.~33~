@@ -1,0 +1,168 @@
+unit ServicoFarmaceutico.Mapper;
+
+interface
+
+uses
+  System.JSON, Model.ServicoFarmaceutico;
+
+type
+  TServicoFarmaceuticoMapper = class
+  public
+    function ParaJSON(const AServicoFarmaceutico: TServicoFarmaceutico): TJSONObject;
+    function DeJSON(const AJSONObject: TJSONObject; const AServicoFarmaceuticoId: Int64 = 0): TServicoFarmaceutico;
+  end;
+
+implementation
+
+uses
+  System.DateUtils, System.SysUtils, Paciente.Mapper, Procedimento.Mapper,
+  Farmaceutico.Mapper, Model.Pessoa, Model.Procedimento, Model.Procedimento.Tipo;
+//  ModelDB, Procedimento.Dao, Paciente.Dao, Farmaceutico.Dao;
+
+{ TServicoFarmaceuticoMapper }
+
+function TServicoFarmaceuticoMapper.DeJSON(const AJSONObject: TJSONObject; const AServicoFarmaceuticoId: Int64 = 0): TServicoFarmaceutico;
+var
+  lItemProcedimentoJSON: TJSONValue;
+  lItensProcedimentosJSONArray: TJSONArray;
+  lPacienteJSON, lFarmaceuticoJSON, lProcedimentoJSON: TJSONObject;
+  lItemProcedimento: TServicoFarmaceuticoItem;
+  lDataStr: string;
+  i: Integer;
+//  lProcedimentoDAO: TProcedimentoDAO;
+//  lPacienteDAO: TPacienteDAO;
+//  lFarmaceuticoDAO: TFarmaceuticoDAO;
+begin
+  if not Assigned(AJSONObject) then
+    raise EArgumentNilException.Create('AJSONObject não pode ser nil');
+
+  Result := TServicoFarmaceutico.Create;
+  try
+    if AServicoFarmaceuticoId > 0 then
+      Result.Id := AServicoFarmaceuticoId
+    else
+      Result.Id := AJSONObject.GetValue<Int64>('id', 0);
+
+    lDataStr := AJSONObject.GetValue<string>('data', '');
+    if lDataStr <> '' then
+      Result.Data := ISO8601ToDate(lDataStr)
+    else
+      Result.Data := AJSONObject.GetValue<TDateTime>('data', 0);
+
+    Result.Observacoes := AJSONObject.GetValue<string>('observacoes', '');
+
+    Result.ValorTotal := AJSONObject.GetValue<Currency>('valorTotal', 0);
+
+    if AJSONObject.TryGetValue<TJSONObject>('farmaceutico', lFarmaceuticoJSON) then
+    begin
+      Result.Farmaceutico.Id := lFarmaceuticoJSON.GetValue<Int64>('id', 0);
+//      lFarmaceuticoDAO := TFarmaceuticoDAO.Create(DBModel);
+//      Result.Farmaceutico := lFarmaceuticoDAO.BuscarPorId(Result.Farmaceutico.Id);
+    end;
+
+    if AJSONObject.TryGetValue<TJSONObject>('paciente', lPacienteJSON) then
+    begin
+      Result.Paciente.Id := lPacienteJSON.GetValue<Int64>('id', 0);
+//      lPacienteDAO := TPacienteDAO.Create(DBModel);
+//      Result.Paciente := lPacienteDAO.BuscarPorId(Result.Paciente.Id);
+    end;
+
+    if AJSONObject.TryGetValue<TJSONArray>('itens', lItensProcedimentosJSONArray) then
+    begin
+      for i := 0 to lItensProcedimentosJSONArray.Count - 1 do
+      begin
+        lItemProcedimentoJSON := lItensProcedimentosJSONArray.Items[i];
+        if lItemProcedimentoJSON is TJSONObject then
+        begin
+          lItemProcedimento := TServicoFarmaceuticoItem.Create;
+          try
+            lItemProcedimento.Id := TJSONObject(lItemProcedimentoJSON).GetValue<Int64>('id', 0);
+            lItemProcedimento.Valor := TJSONObject(lItemProcedimentoJSON).GetValue<Currency>('valor', 0);
+
+            if TJSONObject(lItemProcedimentoJSON).TryGetValue<TJSONObject>('procedimento', lProcedimentoJSON) then
+            begin
+              lItemProcedimento.Procedimento.Id := lProcedimentoJSON.GetValue<Int64>('id', 0);
+//              lProcedimentoDAO := TProcedimentoDAO.Create(DBModel);
+//              lItemProcedimento.Procedimento := lProcedimentoDAO.BuscarPorId(lItemProcedimento.Procedimento.Id);
+            end;
+
+            Result.ItensProcedimentos.Add(lItemProcedimento);
+          except
+            lItemProcedimento.Free;
+            raise;
+          end;
+        end;
+      end;
+    end;
+
+    if Result.ValorTotal = 0 then
+      Result.CalcularValorTotal;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+function TServicoFarmaceuticoMapper.ParaJSON(const AServicoFarmaceutico: TServicoFarmaceutico): TJSONObject;
+var
+  lFarmaceuticoMapper: TFarmaceuticoMapper;
+  lPacienteMapper: TPacienteMapper;
+  lProcedimentoMapper: TProcedimentoMapper;
+  lItensProcedimentosJSONArray: TJSONArray;
+  lItemProcedimentoJSON: TJSONObject;
+  I: Integer;
+begin
+  Result := TJSONObject.Create;
+  try
+    Result.AddPair('id', TJSONNumber.Create(AServicoFarmaceutico.Id));
+    Result.AddPair('data', FormatDateTime('yyyy-mm-dd"T"hh:nn:ss', AServicoFarmaceutico.Data));
+    Result.AddPair('observacoes', AServicoFarmaceutico.Observacoes);
+    Result.AddPair('valorTotal', TJSONNumber.Create(AServicoFarmaceutico.ValorTotal));
+
+    if Assigned(AServicoFarmaceutico.Farmaceutico) then
+    begin
+      lFarmaceuticoMapper := TFarmaceuticoMapper.Create;
+      try
+        Result.AddPair('farmaceutico', lFarmaceuticoMapper.ParaJSON(AServicoFarmaceutico.Farmaceutico));
+      finally
+        lFarmaceuticoMapper.Free;
+      end;
+    end;
+
+    if Assigned(AServicoFarmaceutico.Paciente) then
+    begin
+      lPacienteMapper := TPacienteMapper.Create;
+      try
+        Result.AddPair('paciente', lPacienteMapper.ParaJSON(AServicoFarmaceutico.Paciente));
+      finally
+        lPacienteMapper.Free;
+      end;
+    end;
+
+    if Assigned(AServicoFarmaceutico.ItensProcedimentos) and (AServicoFarmaceutico.ItensProcedimentos.Count > 0) then
+    begin
+      lItensProcedimentosJSONArray := TJSONArray.Create;
+      lProcedimentoMapper := TProcedimentoMapper.Create;
+      try
+        for I := 0 to AServicoFarmaceutico.ItensProcedimentos.Count - 1 do
+        begin
+          lItemProcedimentoJSON := TJSONObject.Create;
+          lItemProcedimentoJSON.AddPair('id', TJSONNumber.Create(AServicoFarmaceutico.ItensProcedimentos[I].Id));
+          lItemProcedimentoJSON.AddPair('valor', TJSONNumber.Create(AServicoFarmaceutico.ItensProcedimentos[I].Valor));
+          lItemProcedimentoJSON.AddPair('procedimento',
+            lProcedimentoMapper.ParaJSON(AServicoFarmaceutico.ItensProcedimentos[I].Procedimento)
+          );
+          lItensProcedimentosJSONArray.AddElement(lItemProcedimentoJSON);
+        end;
+        Result.AddPair('itens', lItensProcedimentosJSONArray);
+      finally
+        lProcedimentoMapper.Free;
+      end;
+    end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
+end.

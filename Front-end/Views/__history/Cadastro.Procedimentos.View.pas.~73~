@@ -1,0 +1,332 @@
+unit Cadastro.Procedimentos.View;
+
+interface
+
+uses
+  System.SysUtils, System.Classes, Vcl.Graphics, Vcl.Controls,
+  Vcl.Forms, Vcl.Dialogs, Data.DB, Vcl.StdCtrls, Vcl.Mask,
+  Vcl.DBCtrls, Vcl.ExtCtrls, Vcl.Grids, Vcl.DBGrids,
+  Vcl.Buttons, FireDAC.Stan.Intf, FireDAC.Stan.Option,
+  FireDAC.Stan.Param, FireDAC.Stan.Error, FireDAC.DatS,
+  FireDAC.Phys.Intf, FireDAC.DApt.Intf, FireDAC.Comp.DataSet,
+  FireDAC.Comp.Client, System.ImageList, Vcl.ImgList,
+  Vcl.VirtualImage, Vcl.Imaging.pngimage, System.Generics.Collections,
+  Controller.Procedimento, Model.Procedimento, Model.Procedimento.Tipo;
+
+type
+  TfCadastroProcedimentos = class(TForm)
+    pnlBottom: TPanel;
+    pnlCentro: TPanel;
+    pnlDados: TPanel;
+    pnlGrid: TPanel;
+    dbgProcedimentos: TDBGrid;
+    pnlBotoes: TPanel;
+    btnNovo: TBitBtn;
+    btnEditar: TBitBtn;
+    btnSalvar: TBitBtn;
+    lblCodigo: TLabel;
+    lblTipo: TLabel;
+    lblDescricao: TLabel;
+    lblValor: TLabel;
+    edtPesquisa: TEdit;
+    lblPesquisa: TLabel;
+    dsProcedimentos: TDataSource;
+    pnlPesquisa: TPanel;
+    cmbTipo: TComboBox;
+    edtValor: TEdit;
+    edtDescricao: TEdit;
+    btnExcluir: TBitBtn;
+    btnCancelar: TBitBtn;
+    edtCodigo: TEdit;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnNovoClick(Sender: TObject);
+    procedure btnEditarClick(Sender: TObject);
+    procedure btnSalvarClick(Sender: TObject);
+    procedure btnCancelarClick(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+    procedure dbgProcedimentosDblClick(Sender: TObject);
+    procedure btCancelarClick(Sender: TObject);
+    procedure edtPesquisaChange(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+  private
+    FLstProcedimentos: TFDMemTable;
+    FController: TProcedimentoController;
+    FModoEdicao: Boolean;
+
+    procedure PreparaMemTable;
+    procedure PesquisarProcedimentos;
+    procedure ConfigurarModoEdicao(AEditando: Boolean);
+    procedure LimparCampos;
+    procedure FiltrarProcedimentos(const ATexto: string);
+    procedure SalvarProcedimento;
+
+    function ValidaCadastro:Boolean;
+  public
+  end;
+
+var
+  fCadastroProcedimentos: TfCadastroProcedimentos;
+
+implementation
+
+{$R *.dfm}
+
+procedure TfCadastroProcedimentos.FormCreate(Sender: TObject);
+begin
+  FController := TProcedimentoController.Create;
+  PreparaMemTable;
+end;
+
+procedure TfCadastroProcedimentos.FormDestroy(Sender: TObject);
+begin
+  FreeAndNil(FController);
+  FreeAndNil(FLstProcedimentos);
+end;
+
+procedure TfCadastroProcedimentos.FormShow(Sender: TObject);
+begin
+  PreencherComboTipo(cmbTipo);
+  PesquisarProcedimentos;
+  ConfigurarModoEdicao(False);
+end;
+
+procedure TfCadastroProcedimentos.PreparaMemTable;
+begin
+  FLstProcedimentos := TFDMemTable.Create(Self);
+  with FLstProcedimentos.FieldDefs do
+  begin
+    Add('Id', ftLargeint);
+    Add('Tipo', ftString, 50);
+    Add('Descricao', ftString, 255);
+    Add('Valor', ftCurrency);
+  end;
+  FLstProcedimentos.CreateDataSet;
+  dsProcedimentos.DataSet := FLstProcedimentos;
+end;
+
+procedure TfCadastroProcedimentos.FiltrarProcedimentos(const ATexto: string);
+var
+  lTextoPesquisa: string;
+begin
+  lTextoPesquisa := AnsiLowerCase(ATexto);
+
+  if lTextoPesquisa = '' then
+  begin
+    FLstProcedimentos.Filtered := False;
+    Exit;
+  end;
+
+  FLstProcedimentos.FilterOptions := [foCaseInsensitive];
+  FLstProcedimentos.Filter := Format('(ID LIKE ''%%%s%%'') OR (TIPO LIKE ''%%%s%%'') OR (DESCRICAO LIKE ''%%%s%%'')',
+                                     [lTextoPesquisa, lTextoPesquisa, lTextoPesquisa]);
+  FLstProcedimentos.Filtered := True;
+end;
+
+procedure TfCadastroProcedimentos.SalvarProcedimento;
+var
+  lProcedimento: TProcedimento;
+  lSucesso: Boolean;
+begin
+  lProcedimento := TProcedimento.Create;
+  try
+    lProcedimento.Id := StrToInt64Def(edtCodigo.Text, 0);
+    lProcedimento.Tipo := StrToTipoProcedimento(cmbTipo.Text);
+    lProcedimento.Descricao := edtDescricao.Text;
+    lProcedimento.Valor := StrToCurr(edtValor.Text);
+
+    lSucesso := FController.Salvar(lProcedimento);
+
+    if lSucesso then
+    begin
+      ShowMessage('Procedimento salvo com sucesso!');
+      PesquisarProcedimentos;
+      ConfigurarModoEdicao(False);
+    end
+    else
+      ShowMessage('Erro ao salvar procedimento.' + #13 + lProcedimento.Aviso);
+  finally
+    lProcedimento.Free;
+  end;
+end;
+
+function TfCadastroProcedimentos.ValidaCadastro: Boolean;
+begin
+  if Trim(cmbTipo.Text) = '' then
+  begin
+    ShowMessage('O tipo do procedimento é obrigatório.');
+    cmbTipo.SetFocus;
+    Exit(False);
+  end;
+
+  if Trim(edtDescricao.Text) = '' then
+  begin
+    ShowMessage('A descrição do procedimento é obrigatória.');
+    edtDescricao.SetFocus;
+    Exit(False);
+  end;
+
+  try
+    StrToCurr(edtValor.Text);
+  except
+    ShowMessage('Valor inválido. Por favor, informe um valor numérico válido.');
+    edtValor.SetFocus;
+    Exit(False);
+  end;
+
+  Result := True;
+end;
+
+procedure TfCadastroProcedimentos.PesquisarProcedimentos;
+var
+  lLista: TObjectList<TProcedimento>;
+  lProcedimento: TProcedimento;
+  lTextoFiltro: string;
+begin
+  lTextoFiltro := edtPesquisa.Text;
+
+  FLstProcedimentos.Filtered := False;
+  FLstProcedimentos.DisableControls;
+
+  try
+    FLstProcedimentos.EmptyDataSet;
+
+    lLista := FController.BuscarTodos;
+    try
+      for lProcedimento in lLista do
+      begin
+        FLstProcedimentos.Append;
+        FLstProcedimentos.FieldByName('Id').AsLargeInt := lProcedimento.Id;
+        FLstProcedimentos.FieldByName('Tipo').AsString := TipoProcedimentoToStr(lProcedimento.Tipo);
+        FLstProcedimentos.FieldByName('Descricao').AsString := lProcedimento.Descricao;
+        FLstProcedimentos.FieldByName('Valor').AsCurrency := lProcedimento.Valor;
+        FLstProcedimentos.Post;
+      end;
+    finally
+      lLista.Free;
+    end;
+  finally
+    FLstProcedimentos.EnableControls;
+
+    if lTextoFiltro <> '' then
+      FiltrarProcedimentos(lTextoFiltro);
+  end;
+end;
+
+procedure TfCadastroProcedimentos.btnNovoClick(Sender: TObject);
+begin
+  FLstProcedimentos.Append;
+  LimparCampos;
+  ConfigurarModoEdicao(True);
+  cmbTipo.SetFocus;
+end;
+
+procedure TfCadastroProcedimentos.btnEditarClick(Sender: TObject);
+begin
+  if not FLstProcedimentos.IsEmpty then
+  begin
+    edtCodigo.Text := FLstProcedimentos.FieldByName('Id').AsString;
+    cmbTipo.Text := FLstProcedimentos.FieldByName('Tipo').AsString;
+    edtDescricao.Text := FLstProcedimentos.FieldByName('Descricao').AsString;
+    edtValor.Text := FLstProcedimentos.FieldByName('Valor').AsString;
+    ConfigurarModoEdicao(True);
+    cmbTipo.SetFocus;
+  end
+  else
+    ShowMessage('Nenhum procedimento selecionado para edição.');
+end;
+
+procedure TfCadastroProcedimentos.btnSalvarClick(Sender: TObject);
+begin
+  btnSalvar.SetFocus;
+
+  if not ValidaCadastro then
+    Exit;
+
+  SalvarProcedimento;
+end;
+
+procedure TfCadastroProcedimentos.btnCancelarClick(Sender: TObject);
+begin
+  ConfigurarModoEdicao(False);
+end;
+
+procedure TfCadastroProcedimentos.btCancelarClick(Sender: TObject);
+begin
+  if FModoEdicao then
+  begin
+    if FLstProcedimentos.State in [dsEdit, dsInsert] then
+      FLstProcedimentos.Cancel;
+
+    LimparCampos;
+    ConfigurarModoEdicao(False);
+  end;
+end;
+
+procedure TfCadastroProcedimentos.btnExcluirClick(Sender: TObject);
+var
+  lId: Int64;
+begin
+  if FLstProcedimentos.IsEmpty then
+  begin
+    ShowMessage('Não há procedimento selecionado para excluir.');
+    Exit;
+  end;
+
+  if MessageDlg('Deseja realmente excluir este procedimento?',
+                mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    lId := FLstProcedimentos.FieldByName('Id').AsLargeInt;
+    if FController.Excluir(lId) then
+    begin
+      PesquisarProcedimentos;
+      ShowMessage('Procedimento excluído com sucesso!');
+    end
+    else
+      ShowMessage('Erro ao excluir o procedimento.');
+  end;
+end;
+
+procedure TfCadastroProcedimentos.dbgProcedimentosDblClick(Sender: TObject);
+begin
+  if not FLstProcedimentos.IsEmpty then
+    btnEditarClick(Sender);
+end;
+
+procedure TfCadastroProcedimentos.edtPesquisaChange(Sender: TObject);
+begin
+  FiltrarProcedimentos(Trim(edtPesquisa.Text));
+end;
+
+procedure TfCadastroProcedimentos.LimparCampos;
+begin
+  edtCodigo.Text := '';
+  cmbTipo.ItemIndex := -1;
+  edtDescricao.Text := '';
+  edtValor.Text := '';
+end;
+
+procedure TfCadastroProcedimentos.ConfigurarModoEdicao(AEditando: Boolean);
+begin
+  FModoEdicao := AEditando;
+
+  btnNovo.Enabled := not AEditando;
+  btnEditar.Enabled := not AEditando and not FLstProcedimentos.IsEmpty;
+  btnSalvar.Enabled := AEditando;
+  btnCancelar.Enabled := AEditando;
+  btnExcluir.Enabled := not AEditando and not FLstProcedimentos.IsEmpty;
+  edtPesquisa.Enabled := not AEditando;
+
+  dbgProcedimentos.Enabled := not AEditando;
+  edtDescricao.Enabled := AEditando;
+  edtValor.Enabled := AEditando;
+  cmbTipo.Enabled := AEditando;
+
+  edtCodigo.ReadOnly := True;
+
+  if not AEditando then
+    LimparCampos;
+end;
+
+end.
+

@@ -1,0 +1,589 @@
+unit FormServicoFarmaceutico;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Data.DB, Vcl.StdCtrls, Vcl.Buttons, Vcl.ExtCtrls,
+  Vcl.Grids, Vcl.DBGrids, Vcl.ComCtrls, Vcl.Mask, Vcl.DBCtrls, FireDAC.Stan.Intf,
+  FireDAC.Stan.Option, FireDAC.Stan.Param, FireDAC.Stan.Error, FireDAC.DatS,
+  FireDAC.Phys.Intf, FireDAC.DApt.Intf, FireDAC.Comp.DataSet, FireDAC.Comp.Client,
+  System.JSON, System.DateUtils, System.Generics.Collections, Vcl.Samples.Spin,
+  ControllerServicoFarmaceutico;
+
+type
+  TProcedimentoItem = class
+    Id: Integer;
+    TipoProcedimento: string;
+    Descricao: string;
+    ValorUnitario: Double;
+  end;
+
+  TfrmServicoFarmaceutico = class(TForm)
+    pnlTopo: TPanel;
+    lblTitulo: TLabel;
+    btnNovo: TSpeedButton;
+    btnSalvar: TSpeedButton;
+    btnCancelar: TSpeedButton;
+    btnExcluir: TSpeedButton;
+    pgcPrincipal: TPageControl;
+    tbsConsulta: TTabSheet;
+    tbsDetalhe: TTabSheet;
+    pnlFiltro: TPanel;
+    lblFiltro: TLabel;
+    edtFiltro: TEdit;
+    btnPesquisar: TSpeedButton;
+    grdServicos: TDBGrid;
+    dtsServicos: TDataSource;
+    dtsProcedimentos: TDataSource;
+    pnlCabecalho: TPanel;
+    lblData: TLabel;
+    dtpData: TDateTimePicker;
+    lblFarmaceutico: TLabel;
+    lblPaciente: TLabel;
+    lblObservacoes: TLabel;
+    memObservacoes: TMemo;
+    cbbFarmaceutico: TComboBox;
+    cbbPaciente: TComboBox;
+    lblTotal: TLabel;
+    edtTotal: TEdit;
+    pnlProcedimentos: TPanel;
+    lblProcedimentos: TLabel;
+    grdProcedimentos: TDBGrid;
+    pnlBotoesProcedimentos: TPanel;
+    btnAdicionarProcedimento: TSpeedButton;
+    btnRemoverProcedimento: TSpeedButton;
+    mtbServicos: TFDMemTable;
+    mtbProcedimentos: TFDMemTable;
+    pnlProcedimentoDetalhe: TPanel;
+    lblTipoProcedimento: TLabel;
+    cbbTipoProcedimento: TComboBox;
+    lblDescricao: TLabel;
+    edtDescricao: TEdit;
+    lblValorUnitario: TLabel;
+    edtValorUnitario: TEdit;
+    btnConfirmarProcedimento: TSpeedButton;
+    btnCancelarProcedimento: TSpeedButton;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnNovoClick(Sender: TObject);
+    procedure btnSalvarClick(Sender: TObject);
+    procedure btnCancelarClick(Sender: TObject);
+    procedure btnExcluirClick(Sender: TObject);
+    procedure btnPesquisarClick(Sender: TObject);
+    procedure grdServicosDblClick(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+  private
+    FController: TServicoFarmaceuticoController;
+    FPacientes: TJSONArray;
+    FFarmaceuticos: TJSONArray;
+    FProcedimentos: TJSONArray;
+    FEditandoServico: Boolean;
+    FServicoAtualId: Integer;
+    FProcedimentoLista: TObjectList<TProcedimentoItem>;
+
+    procedure CarregarPacientes;
+    procedure CarregarFarmaceuticos;
+    procedure CarregarProcedimentos;
+    procedure CarregarServicos(const Filtro: string = '');
+    procedure ConfigurarGrid;
+    procedure ConfigurarMemTables;
+    procedure MostrarDetalhe(const Novo: Boolean);
+    procedure MostrarConsulta;
+    function ValidarServico: Boolean;
+    procedure LimparCampos;
+    procedure CarregarServico(const Id: Integer);
+    procedure AtualizarTotal;
+    procedure ConfigurarModoProcedimento(const Visivel: Boolean);
+    procedure CarregarCombosProcedimentos;
+    procedure AdicionarProcedimentoLista;
+    procedure PreencherMemTableProcedimentos;
+    function CriarJSONServico: TJSONObject;
+  public
+    { Public declarations }
+  end;
+
+var
+  frmServicoFarmaceutico: TfrmServicoFarmaceutico;
+
+implementation
+
+{$R *.dfm}
+
+procedure TfrmServicoFarmaceutico.FormCreate(Sender: TObject);
+begin
+  FController := TServicoFarmaceuticoController.Create;
+  FProcedimentoLista := TObjectList<TProcedimentoItem>.Create(True);
+  FEditandoServico := False;
+  FServicoAtualId := 0;
+
+  ConfigurarMemTables;
+  ConfigurarGrid;
+  MostrarConsulta;
+end;
+
+procedure TfrmServicoFarmaceutico.FormDestroy(Sender: TObject);
+begin
+  FProcedimentoLista.Free;
+  FController.Free;
+
+  if Assigned(FPacientes) then
+    FPacientes.Free;
+
+  if Assigned(FFarmaceuticos) then
+    FFarmaceuticos.Free;
+
+  if Assigned(FProcedimentos) then
+    FProcedimentos.Free;
+end;
+
+procedure TfrmServicoFarmaceutico.FormShow(Sender: TObject);
+begin
+  CarregarPacientes;
+  CarregarFarmaceuticos;
+  CarregarProcedimentos;
+  CarregarServicos;
+  ConfigurarModoProcedimento(False);
+end;
+
+procedure TfrmServicoFarmaceutico.ConfigurarMemTables;
+begin
+  // Configurar MemTable de Serviços
+  mtbServicos.Close;
+  mtbServicos.FieldDefs.Clear;
+  mtbServicos.FieldDefs.Add('Id', ftInteger);
+  mtbServicos.FieldDefs.Add('Data', ftDateTime);
+  mtbServicos.FieldDefs.Add('Farmaceutico', ftString, 100);
+  mtbServicos.FieldDefs.Add('Paciente', ftString, 100);
+  mtbServicos.FieldDefs.Add('ValorTotal', ftCurrency);
+  mtbServicos.CreateDataSet;
+
+  // Configurar MemTable de Procedimentos
+  mtbProcedimentos.Close;
+  mtbProcedimentos.FieldDefs.Clear;
+  mtbProcedimentos.FieldDefs.Add('Id', ftInteger);
+  mtbProcedimentos.FieldDefs.Add('TipoProcedimento', ftString, 100);
+  mtbProcedimentos.FieldDefs.Add('Descricao', ftString, 200);
+  mtbProcedimentos.FieldDefs.Add('ValorUnitario', ftCurrency);
+  mtbProcedimentos.CreateDataSet;
+
+  mtbProcedimentos.AfterPost := mtbProcedimentosAfterPost;
+end;
+
+procedure TfrmServicoFarmaceutico.ConfigurarModoProcedimento(
+  const Visivel: Boolean);
+begin
+
+end;
+
+procedure TfrmServicoFarmaceutico.ConfigurarGrid;
+begin
+  // Configurar Grid de Serviços
+  with grdServicos do
+  begin
+    Columns.Clear;
+
+    with Columns.Add do
+    begin
+      FieldName := 'Id';
+      Title.Caption := 'Código';
+      Width := 60;
+    end;
+
+    with Columns.Add do
+    begin
+      FieldName := 'Data';
+      Title.Caption := 'Data';
+      Width := 100;
+    end;
+
+    with Columns.Add do
+    begin
+      FieldName := 'Farmaceutico';
+      Title.Caption := 'Farmacêutico';
+      Width := 200;
+    end;
+
+    with Columns.Add do
+    begin
+      FieldName := 'Paciente';
+      Title.Caption := 'Paciente';
+      Width := 200;
+    end;
+
+    with Columns.Add do
+    begin
+      FieldName := 'ValorTotal';
+      Title.Caption := 'Valor Total';
+      Width := 100;
+      Alignment := taRightJustify;
+    end;
+  end;
+
+  // Configurar Grid de Procedimentos
+  with grdProcedimentos do
+  begin
+    Columns.Clear;
+
+    with Columns.Add do
+    begin
+      FieldName := 'TipoProcedimento';
+      Title.Caption := 'Tipo';
+      Width := 150;
+    end;
+
+    with Columns.Add do
+    begin
+      FieldName := 'Descricao';
+      Title.Caption := 'Descrição';
+      Width := 250;
+    end;
+
+    with Columns.Add do
+    begin
+      FieldName := 'ValorUnitario';
+      Title.Caption := 'Valor';
+      Width := 100;
+      Alignment := taRightJustify;
+    end;
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.CarregarPacientes;
+var
+  I: Integer;
+  JsonObj: TJSONObject;
+begin
+  if Assigned(FPacientes) then
+    FPacientes.Free;
+
+  FPacientes := FController.ObterTodosPacientes;
+
+  cbbPaciente.Clear;
+  for I := 0 to FPacientes.Count - 1 do
+  begin
+    JsonObj := FPacientes.Items[I] as TJSONObject;
+    cbbPaciente.Items.AddObject(JsonObj.GetValue<string>('nome'), TObject(JsonObj.GetValue<Integer>('id')));
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.CarregarFarmaceuticos;
+var
+  I: Integer;
+  JsonObj: TJSONObject;
+begin
+  if Assigned(FFarmaceuticos) then
+    FFarmaceuticos.Free;
+
+  FFarmaceuticos := FController.ObterTodosFarmaceuticos;
+
+  cbbFarmaceutico.Clear;
+  for I := 0 to FFarmaceuticos.Count - 1 do
+  begin
+    JsonObj := FFarmaceuticos.Items[I] as TJSONObject;
+    cbbFarmaceutico.Items.AddObject(JsonObj.GetValue<string>('nome'), TObject(JsonObj.GetValue<Integer>('id')));
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.CarregarProcedimentos;
+begin
+  if Assigned(FProcedimentos) then
+    FProcedimentos.Free;
+
+  FProcedimentos := FController.ObterTodosProcedimentos;
+
+  CarregarCombosProcedimentos;
+end;
+
+procedure TfrmServicoFarmaceutico.CarregarCombosProcedimentos;
+var
+  I: Integer;
+  JsonObj: TJSONObject;
+begin
+  cbbTipoProcedimento.Clear;
+  for I := 0 to FProcedimentos.Count - 1 do
+  begin
+    JsonObj := FProcedimentos.Items[I] as TJSONObject;
+    cbbTipoProcedimento.Items.AddObject(JsonObj.GetValue<string>('tipo'), TObject(JsonObj.GetValue<Integer>('id')));
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.CarregarServicos(const Filtro: string = '');
+var
+  Servicos: TJSONArray;
+  I: Integer;
+  JsonObj: TJSONObject;
+  StrFiltro: string;
+begin
+  mtbServicos.EmptyDataSet;
+
+  Servicos := FController.ObterTodosServicos;
+  try
+    for I := 0 to Servicos.Count - 1 do
+    begin
+      JsonObj := Servicos.Items[I] as TJSONObject;
+
+      // Aplicar filtro se necessário
+      if Filtro <> '' then
+      begin
+        StrFiltro := Filtro.ToLower;
+        if (Pos(StrFiltro, JsonObj.GetValue<string>('farmaceutico').ToLower) = 0) and
+           (Pos(StrFiltro, JsonObj.GetValue<string>('paciente').ToLower) = 0) then
+          Continue;
+      end;
+
+      mtbServicos.Append;
+      mtbServicos.FieldByName('Id').AsInteger := JsonObj.GetValue<Integer>('id');
+      mtbServicos.FieldByName('Data').AsDateTime := ISO8601ToDate(JsonObj.GetValue<string>('data'));
+      mtbServicos.FieldByName('Farmaceutico').AsString := JsonObj.GetValue<string>('farmaceutico');
+      mtbServicos.FieldByName('Paciente').AsString := JsonObj.GetValue<string>('paciente');
+      mtbServicos.FieldByName('ValorTotal').AsCurrency := JsonObj.GetValue<Double>('valorTotal');
+      mtbServicos.Post;
+    end;
+  finally
+    Servicos.Free;
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.MostrarDetalhe(const Novo: Boolean);
+begin
+  LimparCampos;
+  FEditandoServico := not Novo;
+
+  if Novo then
+  begin
+    dtpData.Date := Date;
+    FServicoAtualId := 0;
+  end;
+
+  pgcPrincipal.ActivePage := tbsDetalhe;
+end;
+
+procedure TfrmServicoFarmaceutico.PreencherMemTableProcedimentos;
+begin
+
+end;
+
+function TfrmServicoFarmaceutico.ValidarServico: Boolean;
+begin
+
+end;
+
+procedure TfrmServicoFarmaceutico.MostrarConsulta;
+begin
+  pgcPrincipal.ActivePage := tbsConsulta;
+  ConfigurarModoProcedimento(False);
+end;
+
+procedure TfrmServicoFarmaceutico.LimparCampos;
+begin
+  dtpData.Date := Date;
+  cbbFarmaceutico.ItemIndex := -1;
+  cbbPaciente.ItemIndex := -1;
+  memObservacoes.Lines.Clear;
+  edtTotal.Text := FormatFloat('#,##0.00', 0);
+
+  FProcedimentoLista.Clear;
+  PreencherMemTableProcedimentos;
+end;
+
+procedure TfrmServicoFarmaceutico.btnNovoClick(Sender: TObject);
+begin
+  MostrarDetalhe(True);
+end;
+
+procedure TfrmServicoFarmaceutico.btnPesquisarClick(Sender: TObject);
+begin
+  CarregarServicos(edtFiltro.Text);
+end;
+
+procedure TfrmServicoFarmaceutico.btnSalvarClick(Sender: TObject);
+var
+  JsonServico: TJSONObject;
+  Sucesso: Boolean;
+begin
+  if not ValidarServico then
+    Exit;
+
+  JsonServico := CriarJSONServico;
+  try
+    if FEditandoServico then
+      Sucesso := FController.AtualizarServico(FServicoAtualId, JsonServico)
+    else
+      Sucesso := FController.InserirServico(JsonServico);
+
+    if Sucesso then
+    begin
+      if FEditandoServico then
+         ShowMessage('Serviço atualizado com sucesso!')
+      else
+         ShowMessage('Serviço cadastrado com sucesso!');
+      MostrarConsulta;
+      CarregarServicos;
+    end
+    else
+      ShowMessage('Erro ao salvar serviço. Verifique os dados e tente novamente.');
+  finally
+    JsonServico.Free;
+  end;
+end;
+
+function TfrmServicoFarmaceutico.CriarJSONServico: TJSONObject;
+var
+  JsonServico: TJSONObject;
+  JsonProcedimentos: TJSONArray;
+  JsonProcedimento: TJSONObject;
+  Item: TProcedimentoItem;
+  I: Integer;
+  FarmaceuticoId, PacienteId: Integer;
+begin
+  JsonServico := TJSONObject.Create;
+
+  if FEditandoServico then
+    JsonServico.AddPair('id', TJSONNumber.Create(FServicoAtualId));
+
+  JsonServico.AddPair('data', FormatDateTime('yyyy-mm-dd', dtpData.Date));
+
+  FarmaceuticoId := Integer(cbbFarmaceutico.Items.Objects[cbbFarmaceutico.ItemIndex]);
+  PacienteId := Integer(cbbPaciente.Items.Objects[cbbPaciente.ItemIndex]);
+
+  JsonServico.AddPair('farmaceuticoId', TJSONNumber.Create(FarmaceuticoId));
+  JsonServico.AddPair('pacienteId', TJSONNumber.Create(PacienteId));
+  JsonServico.AddPair('observacoes', memObservacoes.Text);
+  JsonServico.AddPair('valorTotal', TJSONNumber.Create(StrToFloat(StringReplace(edtTotal.Text, '.', '', [rfReplaceAll]))));
+
+  JsonProcedimentos := TJSONArray.Create;
+  for I := 0 to FProcedimentoLista.Count - 1 do
+  begin
+    Item := FProcedimentoLista[I];
+    JsonProcedimento := TJSONObject.Create;
+    JsonProcedimento.AddPair('procedimentoId', TJSONNumber.Create(Item.Id));
+    JsonProcedimento.AddPair('descricao', Item.Descricao);
+    JsonProcedimento.AddPair('valorUnitario', TJSONNumber.Create(Item.ValorUnitario));
+    JsonProcedimentos.Add(JsonProcedimento);
+  end;
+
+  JsonServico.AddPair('procedimentos', JsonProcedimentos);
+
+  Result := JsonServico;
+end;
+
+procedure TfrmServicoFarmaceutico.AdicionarProcedimentoLista;
+begin
+
+end;
+
+procedure TfrmServicoFarmaceutico.AtualizarTotal;
+begin
+
+end;
+
+procedure TfrmServicoFarmaceutico.btnCancelarClick(Sender: TObject);
+begin
+  MostrarConsulta;
+end;
+
+procedure TfrmServicoFarmaceutico.btnExcluirClick(Sender: TObject);
+begin
+  if FServicoAtualId = 0 then
+  begin
+    ShowMessage('Selecione um serviço para excluir.');
+    Exit;
+  end;
+
+  if MessageDlg('Deseja realmente excluir este serviço?', mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    if FController.ExcluirServico(FServicoAtualId) then
+    begin
+      ShowMessage('Serviço excluído com sucesso!');
+      MostrarConsulta;
+      CarregarServicos;
+    end
+    else
+      ShowMessage('Erro ao excluir serviço.');
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.grdServicosDblClick(Sender: TObject);
+begin
+  if not mtbServicos.IsEmpty then
+  begin
+    FServicoAtualId := mtbServicos.FieldByName('Id').AsInteger;
+    CarregarServico(FServicoAtualId);
+    MostrarDetalhe(False);
+  end;
+end;
+
+procedure TfrmServicoFarmaceutico.CarregarServico(const Id: Integer);
+var
+  JsonServico: TJSONObject;
+  JsonProcedimentos: TJSONArray;
+  JsonProcedimento: TJSONObject;
+  FarmaceuticoId, PacienteId: Integer;
+  i, j: Integer;
+  Item: TProcedimentoItem;
+begin
+  FProcedimentoLista.Clear;
+
+  JsonServico := FController.ObterServicoPorId(Id);
+  try
+    if JsonServico.Count = 0 then
+      Exit;
+
+    dtpData.Date := ISO8601ToDate(JsonServico.GetValue<string>('data'));
+
+    FarmaceuticoId := JsonServico.GetValue<Integer>('farmaceuticoId');
+    PacienteId := JsonServico.GetValue<Integer>('pacienteId');
+
+    // Selecionar farmacêutico no combo
+    for i := 0 to cbbFarmaceutico.Items.Count - 1 do
+      if Integer(cbbFarmaceutico.Items.Objects[i]) = FarmaceuticoId then
+      begin
+        cbbFarmaceutico.ItemIndex := i;
+        Break;
+      end;
+
+    // Selecionar paciente no combo
+    for i := 0 to cbbPaciente.Items.Count - 1 do
+      if Integer(cbbPaciente.Items.Objects[i]) = PacienteId then
+      begin
+        cbbPaciente.ItemIndex := i;
+        Break;
+      end;
+
+    memObservacoes.Text := JsonServico.GetValue<string>('observacoes');
+
+    // Carregar procedimentos
+    JsonProcedimentos := JsonServico.GetValue<TJSONArray>('procedimentos');
+    if Assigned(JsonProcedimentos) then
+    begin
+      for i := 0 to JsonProcedimentos.Count - 1 do
+      begin
+        JsonProcedimento := JsonProcedimentos.Items[i] as TJSONObject;
+
+        Item := TProcedimentoItem.Create;
+        Item.Id := JsonProcedimento.GetValue<Integer>('procedimentoId');
+        Item.Descricao := JsonProcedimento.GetValue<string>('descricao');
+        Item.ValorUnitario := JsonProcedimento.GetValue<Double>('valorUnitario');
+
+        // Buscar o tipo do procedimento pelo ID
+        for j := 0 to FProcedimentos.Count - 1 do
+        begin
+          if (FProcedimentos.Items[j] as TJSONObject).GetValue<Integer>('id') = Item.Id then
+          begin
+            Item.TipoProcedimento := (FProcedimentos.Items[j] as TJSONObject).GetValue<string>('tipo');
+            Break;
+          end;
+        end;
+
+        FProcedimentoLista.Add(Item);
+      end;
+    end;
+
+    PreencherMemTableProcedimentos;
+    AtualizarTotal;
+  finally
+    JsonServico.Free;
+  end;
+end;
+end.

@@ -1,0 +1,299 @@
+object fListaServicoFarmaceutico: TfListaServicoFarmaceutico
+  Left = 0
+  Top = 0
+  Caption = 'Listagem de Servi'#231'os Farmac'#234'uticos'
+  ClientHeight = 580
+  ClientWidth = 900
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -12
+  Font.Name = 'Segoe UI'
+  Font.Style = []
+  Position = poScreenCenter
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  TextHeight = 15
+  object pnlTop: TPanel
+    Left = 0
+    Top = 0
+    Width = 900
+    Height = 41
+    Align = alTop
+    BevelOuter = bvNone
+    Color = clSkyBlue
+    ParentBackground = False
+    TabOrder = 0
+    object lblTitulo: TLabel
+      AlignWithMargins = True
+      Left = 10
+      Top = 5
+      Width = 316
+      Height = 25
+      Margins.Left = 10
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alClient
+      Caption = 'Listagem de Servi'#231'os Farmac'#234'uticos'
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -19
+      Font.Name = 'Segoe UI'
+      Font.Style = [fsBold]
+      ParentFont = False
+      Layout = tlCenter
+    end
+  end
+  object pnlClient: TPanel
+    Left = 0
+    Top = 41
+    Width = 900
+    Height = 489
+    Align = alClient
+    BevelOuter = bvNone
+    TabOrder = 1
+    object grpFiltros: TGroupBox
+      AlignWithMargins = True
+      Left = 10
+      Top = 5
+      Width = 880
+      Height = 110
+      Margins.Left = 10
+      Margins.Top = 5
+      Margins.Right = 10
+      Margins.Bottom = 5
+      Align = alTop
+      Caption = 'Filtros'
+      TabOrder = 0
+      object lblFarmaceutico: TLabel
+        Left = 16
+        Top = 24
+        Width = 75
+        Height = 15
+        Caption = 'Farmac'#234'utico:'
+      end
+      object lblPaciente: TLabel
+        Left = 43
+        Top = 56
+        Width = 48
+        Height = 15
+        Caption = 'Paciente:'
+      end
+      object lblDataInicio: TLabel
+        Left = 450
+        Top = 24
+        Width = 59
+        Height = 15
+        Caption = 'Data In'#237'cio:'
+      end
+      object lblDataFim: TLabel
+        Left = 450
+        Top = 56
+        Width = 50
+        Height = 15
+        Caption = 'Data Fim:'
+      end
+      object btnPesquisar: TBitBtn
+        Left = 662
+        Top = 24
+        Width = 96
+        Height = 62
+        Caption = '&Pesquisar'
+        TabOrder = 2
+        OnClick = btnPesquisarClick
+      end
+      object btnLimparFiltros: TBitBtn
+        Left = 764
+        Top = 24
+        Width = 96
+        Height = 62
+        Caption = '&Limpar'
+        TabOrder = 3
+        OnClick = btnLimparFiltrosClick
+      end
+      object dtiDataInicio: TDateTimePicker
+        Left = 521
+        Top = 19
+        Width = 124
+        Height = 23
+        Date = 45489.000000000000000000
+        Time = 0.715026157406100500
+        TabOrder = 0
+      end
+      object dtiDataFim: TDateTimePicker
+        Left = 521
+        Top = 51
+        Width = 124
+        Height = 23
+        Date = 45489.000000000000000000
+        Time = 0.715026157406100500
+        TabOrder = 1
+      end
+      object cmbFarmaceutico: TComboBox
+        Left = 97
+        Top = 21
+        Width = 320
+        Height = 23
+        Style = csDropDownList
+        TabOrder = 4
+        OnSelect = cmbFarmaceuticoSelect
+      end
+      object cmbPaciente: TComboBox
+        Left = 97
+        Top = 50
+        Width = 320
+        Height = 23
+        Style = csDropDownList
+        TabOrder = 5
+        OnSelect = cmbPacienteSelect
+      end
+      object ckPeriodoCompleto: TCheckBox
+        Left = 450
+        Top = 80
+        Width = 127
+        Height = 17
+        Caption = 'Per'#237'odo completo'
+        TabOrder = 6
+        OnClick = ckPeriodoCompletoClick
+      end
+    end
+    object dbgServicos: TDBGrid
+      AlignWithMargins = True
+      Left = 10
+      Top = 120
+      Width = 880
+      Height = 359
+      Margins.Left = 10
+      Margins.Top = 0
+      Margins.Right = 10
+      Margins.Bottom = 10
+      Align = alClient
+      DataSource = dsServicos
+      Options = [dgTitles, dgIndicator, dgColumnResize, dgColLines, dgRowLines, dgTabs, dgRowSelect, dgConfirmDelete, dgCancelOnExit, dgTitleClick, dgTitleHotTrack]
+      TabOrder = 1
+      TitleFont.Charset = DEFAULT_CHARSET
+      TitleFont.Color = clWindowText
+      TitleFont.Height = -12
+      TitleFont.Name = 'Segoe UI'
+      TitleFont.Style = []
+      OnDblClick = dbgServicosDblClick
+      Columns = <
+        item
+          Expanded = False
+          FieldName = 'Id'
+          Title.Caption = 'ID'
+          Width = 60
+          Visible = True
+        end
+        item
+          Expanded = False
+          FieldName = 'Data'
+          Width = 80
+          Visible = True
+        end
+        item
+          Expanded = False
+          FieldName = 'FarmaceuticoNome'
+          Title.Caption = 'Farmac'#234'utico'
+          Width = 180
+          Visible = True
+        end
+        item
+          Expanded = False
+          FieldName = 'PacienteNome'
+          Title.Caption = 'Paciente'
+          Width = 180
+          Visible = True
+        end
+        item
+          Expanded = False
+          FieldName = 'ValorTotal'
+          Title.Caption = 'Valor Total'
+          Width = 100
+          Visible = True
+        end
+        item
+          Expanded = False
+          FieldName = 'Observacoes'
+          Title.Caption = 'Observa'#231#245'es'
+          Width = 240
+          Visible = True
+        end>
+    end
+  end
+  object pnlBottom: TPanel
+    Left = 0
+    Top = 530
+    Width = 900
+    Height = 50
+    Align = alBottom
+    BevelOuter = bvNone
+    TabOrder = 2
+    object btnNovo: TBitBtn
+      AlignWithMargins = True
+      Left = 422
+      Top = 5
+      Width = 110
+      Height = 40
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alRight
+      Caption = '&Novo'
+      TabOrder = 0
+      OnClick = btnNovoClick
+    end
+    object btnAlterar: TBitBtn
+      AlignWithMargins = True
+      Left = 542
+      Top = 5
+      Width = 110
+      Height = 40
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alRight
+      Caption = '&Alterar'
+      TabOrder = 1
+      OnClick = btnAlterarClick
+    end
+    object btnExcluir: TBitBtn
+      AlignWithMargins = True
+      Left = 662
+      Top = 5
+      Width = 110
+      Height = 40
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alRight
+      Caption = 'E&xcluir'
+      TabOrder = 2
+      OnClick = btnExcluirClick
+    end
+    object btnFechar: TBitBtn
+      AlignWithMargins = True
+      Left = 782
+      Top = 5
+      Width = 110
+      Height = 40
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 8
+      Margins.Bottom = 5
+      Align = alRight
+      Caption = '&Fechar'
+      TabOrder = 3
+      OnClick = btnFecharClick
+    end
+  end
+  object dsServicos: TDataSource
+    Left = 440
+    Top = 300
+  end
+end

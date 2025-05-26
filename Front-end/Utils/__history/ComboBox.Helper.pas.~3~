@@ -1,0 +1,65 @@
+unit ComboBox.Helper;
+
+interface
+
+uses
+  System.Classes,
+  System.Generics.Collections,
+  System.SysUtils,
+  System.StrUtils,
+  Vcl.StdCtrls,
+  Controller.Pessoa,
+  Model.Pessoa;
+
+type
+  TComboBoxHelper = class
+  public
+    class procedure CarregarComboPessoas(AComboBox: TComboBox;
+                                        ATipoPessoa: TPessoaTipo;
+                                        const ATextoTodos: string = '');
+  end;
+
+implementation
+
+{ TComboBoxHelper }
+
+class procedure TComboBoxHelper.CarregarComboPessoas(AComboBox: TComboBox;
+                                                    ATipoPessoa: TPessoaTipo;
+                                                    const ATextoTodos: string);
+var
+  lPessoaController: TPessoaController;
+  lPessoas: TObjectList<TPessoaBase>;
+  lPessoa: TPessoaBase;
+  lTextoTodos: string;
+begin
+  if not Assigned(AComboBox) then
+    raise Exception.Create('ComboBox não pode ser nil');
+
+  lPessoaController := TPessoaController.Create;
+  try
+    lPessoas := lPessoaController.BuscarTodos(ATipoPessoa);
+    try
+      AComboBox.Clear;
+
+      // Define texto padrão se não informado
+      case ATipoPessoa of
+        ptFarmaceutico: lTextoTodos := IfThen(ATextoTodos.IsEmpty, 'Todos os Farmacêuticos', ATextoTodos);
+        ptPaciente: lTextoTodos := IfThen(ATextoTodos.IsEmpty, 'Todos os Pacientes', ATextoTodos);
+      else
+        lTextoTodos := IfThen(ATextoTodos.IsEmpty, 'Todos', ATextoTodos);
+      end;
+
+      AComboBox.Items.AddObject(lTextoTodos, TObject(0));
+
+      for lPessoa in lPessoas do
+        AComboBox.Items.AddObject(lPessoa.Nome, TObject(lPessoa.Id));
+
+    finally
+      lPessoas.Free;
+    end;
+  finally
+    lPessoaController.Free;
+  end;
+end;
+
+end.

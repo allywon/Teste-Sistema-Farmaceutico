@@ -1,0 +1,92 @@
+unit Model.ServicoFarmaceutico;
+
+interface
+
+uses
+  System.SysUtils, System.Generics.Collections, Model.Pessoa, Model.Procedimento;
+
+type
+  TServicoFarmaceuticoItem = class
+   private
+     FId: Int64;
+     FProcedimento: TProcedimento;
+     FValor: Currency;
+   public
+     property Id: Int64 read FId write FId;
+     property Procedimento: TProcedimento read FProcedimento write FProcedimento;
+     property Valor: Currency read FValor write FValor;
+  end;
+
+  TServicoFarmaceutico = class
+  private
+    FId: Int64;
+    FData: TDateTime;
+    FFarmaceutico: TFarmaceutico;
+    FPaciente: TPaciente;
+    FItensProcedimentos: TObjectList<TServicoFarmaceuticoItem>;
+    FObservacoes: string;
+    FValorTotal: Currency;
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Limpar;
+
+    property Id: Int64 read FId write FId;
+    property Data: TDateTime read FData write FData;
+    property Farmaceutico: TFarmaceutico read FFarmaceutico write FFarmaceutico;
+    property Paciente: TPaciente read FPaciente write FPaciente;
+    property ItensProcedimentos: TObjectList<TServicoFarmaceuticoItem> read FItensProcedimentos;
+    property Observacoes: string read FObservacoes write FObservacoes;
+    property ValorTotal: Currency read FValorTotal write FValorTotal;
+
+    procedure CalcularValorTotal;
+  end;
+
+implementation
+
+{ TServicoFarmaceutico }
+
+constructor TServicoFarmaceutico.Create;
+begin
+  inherited;
+  FFarmaceutico := TFarmaceutico.Create;
+  FPaciente := TPaciente.Create;
+  FItensProcedimentos := TObjectList<TServicoFarmaceuticoItem>.Create(True);
+end;
+
+destructor TServicoFarmaceutico.Destroy;
+begin
+  FreeAndNil(FFarmaceutico);
+  FreeAndNil(FPaciente);
+  FreeAndNil(FItensProcedimentos);
+  inherited;
+end;
+
+procedure TServicoFarmaceutico.Limpar;
+begin
+  FId := 0;
+  FData := Date;
+  FObservacoes := '';
+  FValorTotal := 0;
+
+  FFarmaceutico.Id := 0;
+  FFarmaceutico.Nome := '';
+
+  FPaciente.Id := 0;
+  FPaciente.Nome := '';
+
+  FItensProcedimentos.Clear;
+end;
+
+procedure TServicoFarmaceutico.CalcularValorTotal;
+var
+  lProcedimento: TServicoFarmaceuticoItem;
+begin
+  FValorTotal := 0;
+  for lProcedimento in FItensProcedimentos do
+    FValorTotal := FValorTotal + lProcedimento.Valor;
+end;
+
+end.
+

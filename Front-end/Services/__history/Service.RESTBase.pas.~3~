@@ -1,0 +1,93 @@
+unit Service.RESTBase;
+
+interface
+
+uses
+  REST.Client, REST.Types, REST.Response.Adapter, System.SysUtils;
+
+type
+  TRESTServiceBase = class
+  protected
+    FRESTClient: TRESTClient;
+    FRESTRequest: TRESTRequest;
+    FRESTResponse: TRESTResponse;
+    procedure ConfigurarREST;
+    procedure LimparRequest; // Novo método para limpar o request entre chamadas
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    // Método auxiliar para realizar chamadas com limpeza apropriada
+    function ExecutarRequisicao(const Metodo: TRESTRequestMethod; const Recurso: string;
+      const Body: string = ''): string;
+  end;
+
+implementation
+
+procedure TRESTServiceBase.ConfigurarREST;
+begin
+  FRESTClient.BaseURL := 'http://localhost:8085/api';
+  FRESTClient.Accept := 'application/json';
+  FRESTClient.ContentType := 'application/json';
+end;
+
+procedure TRESTServiceBase.LimparRequest;
+begin
+  // Limpar parâmetros e body da requisição anterior
+  FRESTRequest.Params.Clear;
+  FRESTRequest.Body.ClearBody;
+
+  // Desconectar e reconectar os componentes para forçar a limpeza
+  FRESTRequest.Response := nil;
+  FRESTResponse.Free;
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest.Response := FRESTResponse;
+end;
+
+function TRESTServiceBase.ExecutarRequisicao(const Metodo: TRESTRequestMethod;
+  const Recurso: string; const Body: string = ''): string;
+begin
+  // Limpar a requisição antes de configurá-la
+  LimparRequest;
+
+  // Configurar a nova requisição
+  FRESTRequest.Method := Metodo;
+  FRESTRequest.Resource := Recurso;
+
+  // Adicionar o body, se fornecido
+  if Body <> '' then
+    FRESTRequest.Body.Add(Body, ContentTypeFromString('application/json'));
+
+  // Executar a requisição
+  try
+    FRESTRequest.Execute;
+    Result := FRESTResponse.Content;
+  except
+    on E: Exception do
+    begin
+      // Tratamento de erro básico
+      Result := '{"error":"' + E.Message + '"}';
+      raise; // Repassar a exceção para tratamento adicional, se necessário
+    end;
+  end;
+end;
+
+constructor TRESTServiceBase.Create;
+begin
+  FRESTClient := TRESTClient.Create(nil);
+  FRESTResponse := TRESTResponse.Create(nil);
+  FRESTRequest := TRESTRequest.Create(nil);
+  FRESTRequest.Client := FRESTClient;
+  FRESTRequest.Response := FRESTResponse;
+  ConfigurarREST;
+end;
+
+destructor TRESTServiceBase.Destroy;
+begin
+  FRESTRequest.Free;
+  FRESTResponse.Free;
+  FRESTClient.Free;
+  inherited;
+end;
+
+end.
